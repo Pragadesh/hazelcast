@@ -27,7 +27,9 @@ import com.hazelcast.config.SSLConfig;
 import com.hazelcast.config.SocketInterceptorConfig;
 import com.hazelcast.core.Client;
 import com.hazelcast.core.Member;
+import com.hazelcast.crdt.pncounter.PNCounterService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
+import com.hazelcast.flakeidgen.impl.FlakeIdGeneratorService;
 import com.hazelcast.hotrestart.HotRestartService;
 import com.hazelcast.instance.HazelcastInstanceImpl;
 import com.hazelcast.instance.MemberImpl;
@@ -38,10 +40,12 @@ import com.hazelcast.internal.management.dto.ClusterHotRestartStatusDTO;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.monitor.LocalExecutorStats;
+import com.hazelcast.monitor.LocalFlakeIdGeneratorStats;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.monitor.LocalMemoryStats;
 import com.hazelcast.monitor.LocalMultiMapStats;
 import com.hazelcast.monitor.LocalOperationStats;
+import com.hazelcast.monitor.LocalPNCounterStats;
 import com.hazelcast.monitor.LocalQueueStats;
 import com.hazelcast.monitor.LocalReplicatedMapStats;
 import com.hazelcast.monitor.LocalTopicStats;
@@ -62,7 +66,6 @@ import com.hazelcast.spi.StatisticsAwareService;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.servicemanager.ServiceInfo;
 import com.hazelcast.spi.partition.IPartition;
-import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.topic.impl.TopicService;
 import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 import com.hazelcast.wan.WanReplicationService;
@@ -75,6 +78,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.spi.properties.GroupProperty.MC_MAX_VISIBLE_INSTANCE_COUNT;
 import static com.hazelcast.util.SetUtil.createHashSet;
 
 /**
@@ -93,8 +97,12 @@ public class TimedMemberStateFactory {
 
     public TimedMemberStateFactory(HazelcastInstanceImpl instance) {
         this.instance = instance;
-        Node node = instance.node;
-        maxVisibleInstanceCount = node.getProperties().getInteger(GroupProperty.MC_MAX_VISIBLE_INSTANCE_COUNT);
+
+        if (instance.node.getProperties().get(MC_MAX_VISIBLE_INSTANCE_COUNT.getName()) != null) {
+            instance.node.loggingService.getLogger(getClass()).warning(MC_MAX_VISIBLE_INSTANCE_COUNT.getName()
+                    + " property is deprecated and will be removed in a future release.");
+        }
+        maxVisibleInstanceCount = instance.node.getProperties().getInteger(MC_MAX_VISIBLE_INSTANCE_COUNT);
         cacheServiceEnabled = isCacheServiceEnabled();
     }
 
@@ -245,6 +253,12 @@ public class TimedMemberStateFactory {
                 } else if (service instanceof ReplicatedMapService) {
                     count = handleReplicatedMap(memberState, count, config, ((ReplicatedMapService) service).getStats(),
                             longInstanceNames);
+                } else if (service instanceof PNCounterService) {
+                    count = handlePNCounter(memberState, count, config, ((PNCounterService) service).getStats(),
+                            longInstanceNames);
+                } else if (service instanceof FlakeIdGeneratorService) {
+                    count = handleFlakeIdGenerator(memberState, count, config,
+                            ((FlakeIdGeneratorService) service).getStats(), longInstanceNames);
                 }
             }
         }
@@ -269,6 +283,22 @@ public class TimedMemberStateFactory {
             }
         }
         timedMemberState.setInstanceNames(longInstanceNames);
+    }
+
+    private int handleFlakeIdGenerator(MemberStateImpl memberState, int count, Config config,
+            Map<String, LocalFlakeIdGeneratorStats> flakeIdstats, List<String> longInstanceNames) {
+        for (Map.Entry<String, LocalFlakeIdGeneratorStats> entry : flakeIdstats.entrySet()) {
+            String name = entry.getKey();
+            if (count >= maxVisibleInstanceCount) {
+                break;
+            } else if (config.findFlakeIdGeneratorConfig(name).isStatisticsEnabled()) {
+                LocalFlakeIdGeneratorStats stats = entry.getValue();
+                memberState.putLocalFlakeIdStats(name, stats);
+                longInstanceNames.add("f:" + name);
+                ++count;
+            }
+        }
+        return count;
     }
 
     private int handleExecutorService(MemberStateImpl memberState, int count, Config config,
@@ -321,8 +351,25 @@ public class TimedMemberStateFactory {
         return count;
     }
 
+    private int handlePNCounter(MemberStateImpl memberState, int count, Config config,
+                                Map<String, LocalPNCounterStats> counters,
+                                List<String> longInstanceNames) {
+        for (Map.Entry<String, LocalPNCounterStats> entry : counters.entrySet()) {
+            String name = entry.getKey();
+            if (count >= maxVisibleInstanceCount) {
+                break;
+            } else if (config.findPNCounterConfig(name).isStatisticsEnabled()) {
+                LocalPNCounterStats stats = entry.getValue();
+                memberState.putLocalPNCounterStats(name, stats);
+                longInstanceNames.add("pnc:" + name);
+                ++count;
+            }
+        }
+        return count;
+    }
+
     private int handleReliableTopic(MemberStateImpl memberState, int count, Config config, Map<String, LocalTopicStats> topics,
-                            List<String> longInstanceNames) {
+                                    List<String> longInstanceNames) {
         for (Map.Entry<String, LocalTopicStats> entry : topics.entrySet()) {
             String name = entry.getKey();
             if (count >= maxVisibleInstanceCount) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 - 2017, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2018, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -162,22 +162,34 @@ public class FirewallingConnectionManager implements ConnectionManager, PacketHa
     }
 
     @Override
-    public int getCurrentClientConnections() {return delegate.getCurrentClientConnections();}
+    public int getCurrentClientConnections() {
+        return delegate.getCurrentClientConnections();
+    }
 
     @Override
-    public void addConnectionListener(ConnectionListener listener) {delegate.addConnectionListener(listener);}
+    public void addConnectionListener(ConnectionListener listener) {
+        delegate.addConnectionListener(listener);
+    }
 
     @Override
-    public int getAllTextConnections() {return delegate.getAllTextConnections();}
+    public int getAllTextConnections() {
+        return delegate.getAllTextConnections();
+    }
 
     @Override
-    public int getConnectionCount() {return delegate.getConnectionCount();}
+    public int getConnectionCount() {
+        return delegate.getConnectionCount();
+    }
 
     @Override
-    public int getActiveConnectionCount() {return delegate.getActiveConnectionCount();}
+    public int getActiveConnectionCount() {
+        return delegate.getActiveConnectionCount();
+    }
 
     @Override
-    public Connection getConnection(Address address) {return delegate.getConnection(address);}
+    public Connection getConnection(Address address) {
+        return delegate.getConnection(address);
+    }
 
     @Override
     public boolean registerConnection(Address address, Connection connection) {
@@ -190,10 +202,14 @@ public class FirewallingConnectionManager implements ConnectionManager, PacketHa
     }
 
     @Override
-    public void start() {delegate.start();}
+    public void start() {
+        delegate.start();
+    }
 
     @Override
-    public void stop() {delegate.stop();}
+    public void stop() {
+        delegate.stop();
+    }
 
     @Override
     public void shutdown() {

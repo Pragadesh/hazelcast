@@ -1925,6 +1925,8 @@ public class ClientCompatibilityNullTest_1_1 {
 
 
 
+
+
 {
     ClientMessage clientMessage = QueueOfferCodec.encodeRequest(    aString ,    aData ,    aLong   );
     int length = inputStream.readInt();
@@ -5992,6 +5994,28 @@ public class ClientCompatibilityNullTest_1_1 {
     DurableExecutorRetrieveAndDisposeResultCodec.ResponseParameters params = DurableExecutorRetrieveAndDisposeResultCodec.decodeResponse(ClientMessage.createForDecode(new SafeBuffer(bytes), 0));
                 assertTrue(isEqual(null, params.response));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -16,9 +16,9 @@
 
 package com.hazelcast.internal.networking.nio.iobalancer;
 
+import com.hazelcast.internal.networking.nio.NioPipeline;
 import com.hazelcast.internal.networking.nio.MigratableHandler;
 import com.hazelcast.internal.networking.nio.NioThread;
-import com.hazelcast.internal.networking.nio.SelectionHandler;
 import com.hazelcast.util.ItemCounter;
 
 import java.util.Map;
@@ -28,7 +28,7 @@ import java.util.Set;
  * Describes a state of NioThread (im-)balance.
  *
  * It's used by {@link MigrationStrategy} to decide whether and what
- * {@link SelectionHandler} should be migrated.
+ * {@link NioPipeline} should be migrated.
  */
 class LoadImbalance {
     //number of events recorded by the busiest NioThread

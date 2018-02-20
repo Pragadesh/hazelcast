@@ -19,14 +19,13 @@ package com.hazelcast.concurrent.atomicreference;
 import com.hazelcast.config.AtomicReferenceConfig;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.SplitBrainAwareDataContainer;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingValueHolder;
 import com.hazelcast.spi.serialization.SerializationService;
 
-import static com.hazelcast.spi.merge.SplitBrainEntryViews.createSplitBrainMergeEntryView;
+import static com.hazelcast.spi.impl.merge.MergingHolders.createMergeHolder;
 
-public class AtomicReferenceContainer implements SplitBrainAwareDataContainer<Boolean, Data, Data> {
+public class AtomicReferenceContainer {
 
     private final String name;
     private final AtomicReferenceConfig config;
@@ -81,19 +80,27 @@ public class AtomicReferenceContainer implements SplitBrainAwareDataContainer<Bo
         return value == null;
     }
 
-    @Override
-    public Data merge(SplitBrainMergeEntryView<Boolean, Data> mergingEntry, SplitBrainMergePolicy mergePolicy) {
-        mergePolicy.setSerializationService(serializationService);
+    /**
+     * Merges the given {@link MergingValueHolder} via the given {@link SplitBrainMergePolicy}.
+     *
+     * @param mergingValue the {@link MergingValueHolder} instance to merge
+     * @param mergePolicy  the {@link SplitBrainMergePolicy} instance to apply
+     * @return the new value if merge is applied, otherwise {@code null}
+     */
+    public Data merge(MergingValueHolder<Data> mergingValue, SplitBrainMergePolicy mergePolicy, boolean isExistingContainer) {
+        serializationService.getManagedContext().initialize(mergePolicy);
+        mergingValue.setSerializationService(serializationService);
 
-        if (mergingEntry.getKey()) {
-            SplitBrainMergeEntryView<Boolean, Data> existingEntry = createSplitBrainMergeEntryView(true, value);
-            Data newValue = mergePolicy.merge(mergingEntry, existingEntry);
+        if (isExistingContainer) {
+            MergingValueHolder<Data> existingValue = createMergeHolder(value);
+            existingValue.setSerializationService(serializationService);
+            Data newValue = mergePolicy.merge(mergingValue, existingValue);
             if (newValue != null && !newValue.equals(value)) {
                 value = newValue;
                 return newValue;
             }
         } else {
-            Data newValue = mergePolicy.merge(mergingEntry, null);
+            Data newValue = mergePolicy.merge(mergingValue, null);
             if (newValue != null) {
                 value = newValue;
                 return newValue;

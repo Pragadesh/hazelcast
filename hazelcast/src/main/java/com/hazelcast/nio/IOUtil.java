@@ -163,11 +163,11 @@ public final class IOUtil {
 
     public static OutputStream newOutputStream(final ByteBuffer dst) {
         return new OutputStream() {
-            public void write(int b) throws IOException {
+            public void write(int b) {
                 dst.put((byte) b);
             }
 
-            public void write(byte[] bytes, int off, int len) throws IOException {
+            public void write(byte[] bytes, int off, int len) {
                 dst.put(bytes, off, len);
             }
         };
@@ -175,14 +175,14 @@ public final class IOUtil {
 
     public static InputStream newInputStream(final ByteBuffer src) {
         return new InputStream() {
-            public int read() throws IOException {
+            public int read() {
                 if (!src.hasRemaining()) {
                     return -1;
                 }
                 return src.get() & 0xff;
             }
 
-            public int read(byte[] bytes, int off, int len) throws IOException {
+            public int read(byte[] bytes, int off, int len) {
                 if (!src.hasRemaining()) {
                     return -1;
                 }
@@ -575,6 +575,20 @@ public final class IOUtil {
         while (-1 != (n = input.read(buffer))) {
             output.write(buffer, 0, n);
         }
+    }
+
+    /**
+     * Creates a debug String for te given ByteBuffer. Useful when debugging IO.
+     *
+     * Do not remove even if this method isn't used.
+     *
+     * @param name name of the ByteBuffer.
+     * @param byteBuffer the ByteBuffer
+     * @return the debug String
+     */
+    public static String toDebugString(String name, ByteBuffer byteBuffer) {
+        return name + "(pos:" + byteBuffer.position() + " cap:" + byteBuffer.capacity()
+                + " remain:" + byteBuffer.remaining() + " lim:" + byteBuffer.limit() + ")";
     }
 
     private static final class ClassLoaderAwareObjectInputStream extends ObjectInputStream {

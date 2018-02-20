@@ -50,14 +50,14 @@ public final class ReflectionsHelper {
             URL url = iterator.next();
             // detect hazelcast-VERSION-tests.jar & $SOMEPATH/hazelcast/target/test-classes/ and exclude it from classpath
             // also exclude hazelcast-license-extractor artifact
-            if (url.toString().contains("-tests.jar") || url.toString().contains("target/test-classes") ||
-                    url.toString().contains("hazelcast-license-extractor")) {
+            if (url.toString().contains("-tests.jar") || url.toString().contains("target/test-classes")
+                    || url.toString().contains("hazelcast-license-extractor")) {
                 iterator.remove();
             }
         }
         HierarchyTraversingSubtypesScanner subtypesScanner = new HierarchyTraversingSubtypesScanner();
         subtypesScanner.setResultFilter(new FilterBuilder().exclude("java\\.lang\\.(Object|Enum)")
-                                                           .exclude("com\\.hazelcast\\.com\\.eclipsesource.*"));
+                .exclude("com\\.hazelcast\\.com\\.eclipsesource.*"));
         REFLECTIONS = new ReflectionsTransitive(new ConfigurationBuilder().addUrls(comHazelcastPackageURLs)
                 .addScanners(subtypesScanner, new TypeAnnotationsScanner())
                 .setMetadataAdapter(new JavaReflectionAdapter()));
@@ -79,11 +79,11 @@ public final class ReflectionsHelper {
                     store.getAll(
                             HierarchyTraversingSubtypesScanner.class.getSimpleName(),
                             singletonList(type.getName())),
-                            configuration.getClassLoaders()));
+                    configuration.getClassLoaders()));
         }
     }
 
-    public static class HierarchyTraversingSubtypesScanner extends AbstractScanner{
+    public static class HierarchyTraversingSubtypesScanner extends AbstractScanner {
         /**
          * creates new HierarchyTraversingSubtypesScanner. will exclude direct Object subtypes
          */
@@ -93,6 +93,7 @@ public final class ReflectionsHelper {
 
         /**
          * creates new HierarchyTraversingSubtypesScanner.
+         *
          * @param excludeObjectClass if false, include direct {@link Object} subtypes in results.
          */
         public HierarchyTraversingSubtypesScanner(boolean excludeObjectClass) {
@@ -114,7 +115,7 @@ public final class ReflectionsHelper {
 
             // apart from this class' direct supertype and directly declared interfaces, also scan the class
             // hierarchy up until Object class
-            Class superKlass = ((Class)cls).getSuperclass();
+            Class superKlass = ((Class) cls).getSuperclass();
             while (superKlass != null) {
                 scanClassAndInterfaces(superKlass, className);
                 superKlass = superKlass.getSuperclass();

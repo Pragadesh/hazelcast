@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.Preconditions.checkPositive;
 import static java.util.Collections.newSetFromMap;
+import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class FlakeIdGeneratorProxy
@@ -62,9 +63,10 @@ public class FlakeIdGeneratorProxy
     private static final int NODE_ID_NOT_YET_SET = -1;
     private static final int NODE_ID_OUT_OF_RANGE = -2;
 
+    private final String name;
+    private final long epochStart;
     private volatile int nodeId = NODE_ID_NOT_YET_SET;
     private volatile long nextNodeIdUpdate = Long.MIN_VALUE;
-    private final String name;
     private final ILogger logger;
 
     /**
@@ -87,6 +89,7 @@ public class FlakeIdGeneratorProxy
         this.logger = nodeEngine.getLogger(getClass());
 
         FlakeIdGeneratorConfig config = nodeEngine.getConfig().findFlakeIdGeneratorConfig(getName());
+        epochStart = EPOCH_START - (config.getIdOffset() >> (BITS_SEQUENCE + BITS_NODE_ID));
         batcher = new AutoBatcher(config.getPrefetchCount(), config.getPrefetchValidityMillis(),
                 new AutoBatcher.IdBatchSupplier() {
                     @Override
@@ -113,6 +116,18 @@ public class FlakeIdGeneratorProxy
         // The cluster version is checked when ClusterService.getMemberListJoinVersion() is called. This always happens
         // before first ID is generated.
         return batcher.newId();
+    }
+
+    @Override
+    public boolean init(long id) {
+        // Add 1 hour worth of IDs as a reserve: due to long batch validity some clients might be still getting
+        // older IDs. 1 hour is just a safe enough value, not a real guarantee: some clients might have longer
+        // validity.
+        // The init method should normally be called before any client generated IDs: in this case no reserve is
+        // needed, so we don't want to increase the reserve excessively.
+        long reserve = HOURS.toMillis(1)
+                << (FlakeIdGeneratorProxy.BITS_NODE_ID + FlakeIdGeneratorProxy.BITS_SEQUENCE);
+        return newId() >= id + reserve;
     }
 
     public IdBatchAndWaitTime newIdBatch(int batchSize) {
@@ -163,8 +178,10 @@ public class FlakeIdGeneratorProxy
             throw new NodeIdOutOfRangeException("NodeID overflow, this member cannot generate IDs");
         }
         assert (nodeId & -1 << BITS_NODE_ID) == 0  : "nodeId out of range: " + nodeId;
-        now -= EPOCH_START;
-        assert now >= 0 && now < (1L << BITS_TIMESTAMP)  : "Current time out of allowed range";
+        now -= epochStart;
+        if (now < -(1L << BITS_TIMESTAMP) || now >= (1L << BITS_TIMESTAMP)) {
+            throw new HazelcastException("Current time out of allowed range");
+        }
         now <<= BITS_SEQUENCE;
         long oldGeneratedValue;
         long base;
@@ -175,6 +192,8 @@ public class FlakeIdGeneratorProxy
 
         long waitTime = Math.max(0, ((base + batchSize - now) >> BITS_SEQUENCE) - ALLOWED_FUTURE_MILLIS);
         base = base << BITS_NODE_ID | nodeId;
+
+        getService().incrementStatsForNewId(name);
         return new IdBatchAndWaitTime(new IdBatch(base, INCREMENT, batchSize), waitTime);
     }
 

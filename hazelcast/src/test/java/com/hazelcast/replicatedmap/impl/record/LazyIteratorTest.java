@@ -17,6 +17,8 @@
 package com.hazelcast.replicatedmap.impl.record;
 
 import com.hazelcast.replicatedmap.merge.ReplicatedMapMergePolicy;
+import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -681,7 +683,12 @@ public class LazyIteratorTest extends HazelcastTestSupport {
         }
 
         @Override
-        public boolean merge(Object key, ReplicatedMapEntryView entryView, ReplicatedMapMergePolicy policy) {
+        public boolean merge(Object key, ReplicatedMapEntryView entryView, ReplicatedMapMergePolicy mergePolicy) {
+            return false;
+        }
+
+        @Override
+        public boolean merge(MergingEntryHolder<Object, Object> mergingEntry, SplitBrainMergePolicy mergePolicy) {
             return false;
         }
     }

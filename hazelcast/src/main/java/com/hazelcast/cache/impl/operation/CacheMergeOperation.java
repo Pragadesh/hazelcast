@@ -18,7 +18,6 @@ package com.hazelcast.cache.impl.operation;
 
 import com.hazelcast.cache.CacheEntryView;
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
-import com.hazelcast.cache.impl.CacheRecordStore;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.ICacheService;
 import com.hazelcast.cache.impl.event.CacheWanEventPublisher;
@@ -30,13 +29,13 @@ import com.hazelcast.spi.BackupAwareOperation;
 import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.ServiceNamespaceAware;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
 import com.hazelcast.spi.impl.AbstractNamedOperation;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 import com.hazelcast.spi.serialization.SerializationService;
 
 import java.io.IOException;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -45,10 +44,12 @@ import static com.hazelcast.util.MapUtil.createHashMap;
 
 /**
  * Contains multiple merging entries for split-brain healing with a {@link SplitBrainMergePolicy}.
+ *
+ * @since 3.10
  */
 public class CacheMergeOperation extends AbstractNamedOperation implements BackupAwareOperation, ServiceNamespaceAware {
 
-    private List<SplitBrainMergeEntryView<Data, Data>> mergeEntries;
+    private List<MergingEntryHolder<Data, Data>> mergingEntries;
     private SplitBrainMergePolicy mergePolicy;
 
     private transient SerializationService serializationService;
@@ -61,10 +62,11 @@ public class CacheMergeOperation extends AbstractNamedOperation implements Backu
     public CacheMergeOperation() {
     }
 
-    CacheMergeOperation(String name, List<SplitBrainMergeEntryView<Data, Data>> mergeEntries, SplitBrainMergePolicy policy) {
+    public CacheMergeOperation(String name, List<MergingEntryHolder<Data, Data>> mergingEntries,
+                               SplitBrainMergePolicy mergePolicy) {
         super(name);
-        this.mergeEntries = mergeEntries;
-        this.mergePolicy = policy;
+        this.mergingEntries = mergingEntries;
+        this.mergePolicy = mergePolicy;
     }
 
     @Override
@@ -77,21 +79,21 @@ public class CacheMergeOperation extends AbstractNamedOperation implements Backu
         }
         hasBackups = getSyncBackupCount() + getAsyncBackupCount() > 0;
         if (hasBackups) {
-            backupRecords = createHashMap(mergeEntries.size());
+            backupRecords = createHashMap(mergingEntries.size());
         }
     }
 
     @Override
     public void run() {
-        for (SplitBrainMergeEntryView<Data, Data> mergingEntry : mergeEntries) {
+        for (MergingEntryHolder<Data, Data> mergingEntry : mergingEntries) {
             merge(mergingEntry);
         }
     }
 
-    private void merge(SplitBrainMergeEntryView<Data, Data> mergingEntry) {
+    private void merge(MergingEntryHolder<Data, Data> mergingEntry) {
         Data dataKey = mergingEntry.getKey();
 
-        CacheRecord backupRecord = ((CacheRecordStore) cache).merge(mergingEntry, mergePolicy);
+        CacheRecord backupRecord = cache.merge(mergingEntry, mergePolicy);
         if (backupRecord != null) {
             backupRecords.put(dataKey, backupRecord);
         }
@@ -134,9 +136,9 @@ public class CacheMergeOperation extends AbstractNamedOperation implements Backu
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        out.writeInt(mergeEntries.size());
-        for (SplitBrainMergeEntryView<Data, Data> mergeEntry : mergeEntries) {
-            out.writeObject(mergeEntry);
+        out.writeInt(mergingEntries.size());
+        for (MergingEntryHolder<Data, Data> mergingEntry : mergingEntries) {
+            out.writeObject(mergingEntry);
         }
         out.writeObject(mergePolicy);
     }
@@ -144,11 +146,11 @@ public class CacheMergeOperation extends AbstractNamedOperation implements Backu
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        mergeEntries = new LinkedList<SplitBrainMergeEntryView<Data, Data>>();
         int size = in.readInt();
+        mergingEntries = new ArrayList<MergingEntryHolder<Data, Data>>(size);
         for (int i = 0; i < size; i++) {
-            SplitBrainMergeEntryView<Data, Data> mergeEntry = in.readObject();
-            mergeEntries.add(mergeEntry);
+            MergingEntryHolder<Data, Data> mergingEntry = in.readObject();
+            mergingEntries.add(mergingEntry);
         }
         mergePolicy = in.readObject();
     }

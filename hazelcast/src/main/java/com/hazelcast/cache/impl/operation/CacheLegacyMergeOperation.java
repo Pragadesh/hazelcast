@@ -33,7 +33,7 @@ import static com.hazelcast.cache.impl.AbstractCacheRecordStore.SOURCE_NOT_AVAIL
 import static com.hazelcast.cache.impl.operation.MutableOperation.IGNORE_COMPLETION;
 
 /**
- * Contains a merging entry for split-brain healing with with a {@link CacheMergePolicy}.
+ * Contains a merging entry for split-brain healing with a {@link CacheMergePolicy}.
  */
 public class CacheLegacyMergeOperation
         extends AbstractCacheOperation
@@ -60,7 +60,7 @@ public class CacheLegacyMergeOperation
     public void afterRun() {
         if (backupRecord != null) {
             if (cache.isWanReplicationEnabled()) {
-                final Data valueData = getNodeEngine().toData(backupRecord.getValue());
+                Data valueData = getNodeEngine().toData(backupRecord.getValue());
                 CacheEntryView<Data, Data> entryView = CacheEntryViews.createDefaultEntryView(key, valueData, backupRecord);
                 CacheWanEventPublisher publisher = cacheService.getCacheWanEventPublisher();
                 publisher.publishWanReplicationUpdate(name, entryView);

@@ -23,6 +23,8 @@ import com.hazelcast.config.CacheConfig;
 import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.ObjectNamespace;
+import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 
 import javax.cache.expiry.ExpiryPolicy;
 import javax.cache.processor.EntryProcessor;
@@ -476,11 +478,11 @@ public interface ICacheRecordStore {
     ObjectNamespace getObjectNamespace();
 
     /**
-     * Merges given record (inside given {@link CacheEntryView}) with the existing record as given {@link CacheMergePolicy}.
+     * Merges the given {@link CacheEntryView} via the given {@link CacheMergePolicy}.
      *
-     * @param cacheEntryView the {@link CacheEntryView} instance that wraps key/value for merging and existing entry
-     * @param mergePolicy    the {@link CacheMergePolicy} instance for handling merge policy
-     * @param caller
+     * @param cacheEntryView the {@link CacheEntryView} instance to merge
+     * @param mergePolicy    the {@link CacheMergePolicy} instance to apply
+     * @param caller         the UUID of the caller
      * @param completionId   User generated id which shall be received as a field of the cache event upon completion of
      *                       the request in the cluster.
      * @param origin         source of the call
@@ -488,4 +490,13 @@ public interface ICacheRecordStore {
      */
     CacheRecord merge(CacheEntryView<Data, Data> cacheEntryView, CacheMergePolicy mergePolicy,
                       String caller, String origin, int completionId);
+
+    /**
+     * Merges the given {@link MergingEntryHolder} via the given {@link SplitBrainMergePolicy}.
+     *
+     * @param mergingEntry the {@link MergingEntryHolder} instance to merge
+     * @param mergePolicy  the {@link SplitBrainMergePolicy} instance to apply
+     * @return the used {@link CacheRecord} if merge is applied, otherwise {@code null}
+     */
+    CacheRecord merge(MergingEntryHolder<Data, Data> mergingEntry, SplitBrainMergePolicy mergePolicy);
 }

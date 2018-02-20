@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2018, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleEvent.LifecycleState;
 import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.instance.TestUtil;
+import com.hazelcast.internal.cluster.fd.ClusterFailureDetectorType;
 import com.hazelcast.nio.Address;
 import com.hazelcast.spi.properties.GroupProperty;
 import com.hazelcast.test.AssertTask;
@@ -75,12 +76,12 @@ import static org.junit.Assert.assertTrue;
 public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "fd:{0}")
-    public static Collection<Object> parameters() {
-        return Arrays.asList(new Object[]{"deadline", "phi-accrual"});
+    public static Collection<ClusterFailureDetectorType> parameters() {
+        return Arrays.asList(ClusterFailureDetectorType.values());
     }
 
     @Parameterized.Parameter
-    public String failureDetectorType;
+    public ClusterFailureDetectorType failureDetectorType;
 
     private TestHazelcastInstanceFactory factory;
 
@@ -213,7 +214,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
                 assertTrue(clusterService.getClusterJoinManager().isMastershipClaimInProgress());
             }
         });
-        
+
         sleepSeconds(3);
         terminateInstance(slave1);
 
@@ -259,7 +260,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     @Test
     public void slave_heartbeat_timeout() {
         Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
-                                     .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1");
+                .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
         HazelcastInstance slave2 = newHazelcastInstance(config);
@@ -276,8 +277,8 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     @Test
     public void master_heartbeat_timeout() {
         Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
-                                    .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
-                                    .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "3");
+                .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "3");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
         HazelcastInstance slave2 = newHazelcastInstance(config);
@@ -347,7 +348,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     public void slave_receives_member_list_from_non_master() {
         String infiniteTimeout = Integer.toString(Integer.MAX_VALUE);
         Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), infiniteTimeout)
-                                    .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+                .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
 
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
@@ -456,8 +457,8 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     @Test
     public void master_candidate_and_new_member_splits_on_master_failure() {
         Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
-                                    .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
-                                    .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+                .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
 
@@ -483,7 +484,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     public void slave_splits_and_eventually_merges_back() {
         Config config = new Config();
         config.setProperty(MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "15")
-              .setProperty(MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "5");
+                .setProperty(MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "5");
         final HazelcastInstance member1 = newHazelcastInstance(config);
         final HazelcastInstance member2 = newHazelcastInstance(config);
         final HazelcastInstance member3 = newHazelcastInstance(config);
@@ -506,8 +507,14 @@ public class MembershipFailureTest extends HazelcastTestSupport {
         assertClusterSizeEventually(1, member3);
 
         assertOpenEventually(mergeLatch);
-        assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member2));
         assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member3));
+
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member2));
+            }
+        });
     }
 
     @Test
@@ -694,12 +701,11 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     }
 
     HazelcastInstance newHazelcastInstance(Config config) {
-        config.setProperty(GroupProperty.HEARTBEAT_FAILURE_DETECTOR_TYPE.getName(), failureDetectorType);
+        config.setProperty(GroupProperty.HEARTBEAT_FAILURE_DETECTOR_TYPE.getName(), failureDetectorType.toString());
         return factory.newHazelcastInstance(config);
     }
 
     Collection<HazelcastInstance> getAllHazelcastInstances() {
         return factory.getAllHazelcastInstances();
     }
-
 }

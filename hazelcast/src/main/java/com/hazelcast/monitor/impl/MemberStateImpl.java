@@ -27,10 +27,12 @@ import com.hazelcast.internal.management.dto.MXBeansDTO;
 import com.hazelcast.monitor.HotRestartState;
 import com.hazelcast.monitor.LocalCacheStats;
 import com.hazelcast.monitor.LocalExecutorStats;
+import com.hazelcast.monitor.LocalFlakeIdGeneratorStats;
 import com.hazelcast.monitor.LocalMapStats;
 import com.hazelcast.monitor.LocalMemoryStats;
 import com.hazelcast.monitor.LocalMultiMapStats;
 import com.hazelcast.monitor.LocalOperationStats;
+import com.hazelcast.monitor.LocalPNCounterStats;
 import com.hazelcast.monitor.LocalQueueStats;
 import com.hazelcast.monitor.LocalReplicatedMapStats;
 import com.hazelcast.monitor.LocalTopicStats;
@@ -50,7 +52,7 @@ import static com.hazelcast.util.JsonUtil.getArray;
 import static com.hazelcast.util.JsonUtil.getObject;
 import static com.hazelcast.util.JsonUtil.getString;
 
-@SuppressWarnings("checkstyle:classdataabstractioncoupling")
+@SuppressWarnings({"checkstyle:classdataabstractioncoupling", "checkstyle:classfanoutcomplexity"})
 public class MemberStateImpl implements MemberState {
 
     private String address;
@@ -60,10 +62,12 @@ public class MemberStateImpl implements MemberState {
     private Map<String, LocalQueueStats> queueStats = new HashMap<String, LocalQueueStats>();
     private Map<String, LocalTopicStats> topicStats = new HashMap<String, LocalTopicStats>();
     private Map<String, LocalTopicStats> reliableTopicStats = new HashMap<String, LocalTopicStats>();
+    private Map<String, LocalPNCounterStats> pnCounterStats = new HashMap<String, LocalPNCounterStats>();
     private Map<String, LocalExecutorStats> executorStats = new HashMap<String, LocalExecutorStats>();
     private Map<String, LocalReplicatedMapStats> replicatedMapStats = new HashMap<String, LocalReplicatedMapStats>();
     private Map<String, LocalCacheStats> cacheStats = new HashMap<String, LocalCacheStats>();
     private Map<String, LocalWanStats> wanStats = new HashMap<String, LocalWanStats>();
+    private Map<String, LocalFlakeIdGeneratorStats> flakeIdGeneratorStats = new HashMap<String, LocalFlakeIdGeneratorStats>();
     private Collection<ClientEndPointDTO> clients = new HashSet<ClientEndPointDTO>();
     private Map<String, String> clientStats = new HashMap<String, String>();
     private MXBeansDTO beans = new MXBeansDTO();
@@ -113,6 +117,11 @@ public class MemberStateImpl implements MemberState {
     }
 
     @Override
+    public LocalPNCounterStats getLocalPNCounterStats(String pnCounterName) {
+        return pnCounterStats.get(pnCounterName);
+    }
+
+    @Override
     public LocalReplicatedMapStats getLocalReplicatedMapStats(String replicatedMapName) {
         return replicatedMapStats.get(replicatedMapName);
     }
@@ -130,6 +139,11 @@ public class MemberStateImpl implements MemberState {
     @Override
     public LocalWanStats getLocalWanStats(String schemeName) {
         return wanStats.get(schemeName);
+    }
+
+    @Override
+    public LocalFlakeIdGeneratorStats getLocalFlakeIdGeneratorStats(String flakeIdName) {
+        return flakeIdGeneratorStats.get(flakeIdName);
     }
 
     @Override
@@ -165,6 +179,10 @@ public class MemberStateImpl implements MemberState {
         reliableTopicStats.put(name, localTopicStats);
     }
 
+    public void putLocalPNCounterStats(String name, LocalPNCounterStats localPNCounterStats) {
+        pnCounterStats.put(name, localPNCounterStats);
+    }
+
     public void putLocalExecutorStats(String name, LocalExecutorStats localExecutorStats) {
         executorStats.put(name, localExecutorStats);
     }
@@ -175,6 +193,10 @@ public class MemberStateImpl implements MemberState {
 
     public void putLocalWanStats(String name, LocalWanStats localWanStats) {
         wanStats.put(name, localWanStats);
+    }
+
+    public void putLocalFlakeIdStats(String name, LocalFlakeIdGeneratorStats localFlakeIdStats) {
+        flakeIdGeneratorStats.put(name, localFlakeIdStats);
     }
 
     public Collection<ClientEndPointDTO> getClients() {
@@ -271,9 +293,11 @@ public class MemberStateImpl implements MemberState {
         serializeMap(root, "queueStats", queueStats);
         serializeMap(root, "topicStats", topicStats);
         serializeMap(root, "reliableTopicStats", reliableTopicStats);
+        serializeMap(root, "pnCounterStats", pnCounterStats);
         serializeMap(root, "executorStats", executorStats);
         serializeMap(root, "cacheStats", cacheStats);
         serializeMap(root, "wanStats", wanStats);
+        serializeMap(root, "flakeIdStats", flakeIdGeneratorStats);
 
         final JsonObject runtimePropsObject = new JsonObject();
         for (Map.Entry<String, Long> entry : runtimeProps.entrySet()) {
@@ -347,6 +371,11 @@ public class MemberStateImpl implements MemberState {
             stats.fromJson(next.getValue().asObject());
             reliableTopicStats.put(next.getName(), stats);
         }
+        for (JsonObject.Member next : getObject(json, "pnCounterStats")) {
+            LocalPNCounterStatsImpl stats = new LocalPNCounterStatsImpl();
+            stats.fromJson(next.getValue().asObject());
+            pnCounterStats.put(next.getName(), stats);
+        }
         for (JsonObject.Member next : getObject(json, "executorStats")) {
             LocalExecutorStatsImpl stats = new LocalExecutorStatsImpl();
             stats.fromJson(next.getValue().asObject());
@@ -361,6 +390,11 @@ public class MemberStateImpl implements MemberState {
             LocalWanStats stats = new LocalWanStatsImpl();
             stats.fromJson(next.getValue().asObject());
             wanStats.put(next.getName(), stats);
+        }
+        for (JsonObject.Member next : getObject(json, "flakeIdStats", new JsonObject())) {
+            LocalFlakeIdGeneratorStats stats = new LocalFlakeIdGeneratorStatsImpl();
+            stats.fromJson(next.getValue().asObject());
+            flakeIdGeneratorStats.put(next.getName(), stats);
         }
         for (JsonObject.Member next : getObject(json, "runtimeProps")) {
             runtimeProps.put(next.getName(), next.getValue().asLong());
@@ -425,6 +459,7 @@ public class MemberStateImpl implements MemberState {
                 + ", queueStats=" + queueStats
                 + ", topicStats=" + topicStats
                 + ", reliableTopicStats=" + reliableTopicStats
+                + ", pnCounterStats=" + pnCounterStats
                 + ", executorStats=" + executorStats
                 + ", cacheStats=" + cacheStats
                 + ", memoryStats=" + memoryStats
@@ -434,6 +469,7 @@ public class MemberStateImpl implements MemberState {
                 + ", hotRestartState=" + hotRestartState
                 + ", clusterHotRestartStatus=" + clusterHotRestartStatus
                 + ", wanSyncState=" + wanSyncState
+                + ", flakeIdStats=" + flakeIdGeneratorStats
                 + ", clientStats=" + clientStats
                 + '}';
     }

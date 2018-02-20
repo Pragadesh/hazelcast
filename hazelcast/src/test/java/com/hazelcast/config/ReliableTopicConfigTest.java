@@ -222,16 +222,15 @@ public class ReliableTopicConfigTest {
 
         String s = config.toString();
 
-        assertEquals("ReliableTopicConfig{name='foo', topicOverloadPolicy=BLOCK, executor=null, " +
-                "readBatchSize=10, statisticsEnabled=true, listenerConfigs=[]}", s);
+        assertEquals("ReliableTopicConfig{name='foo', topicOverloadPolicy=BLOCK, executor=null,"
+                + " readBatchSize=10, statisticsEnabled=true, listenerConfigs=[]}", s);
     }
 
     @Test
     public void testEqualsAndHashCode() {
         EqualsVerifier.forClass(ReliableTopicConfig.class)
-                      .allFieldsShouldBeUsed()
-                      .suppress(Warning.NULL_FIELDS, Warning.NONFINAL_FIELDS)
-                      .verify();
+                .allFieldsShouldBeUsed()
+                .suppress(Warning.NULL_FIELDS, Warning.NONFINAL_FIELDS)
+                .verify();
     }
-
 }

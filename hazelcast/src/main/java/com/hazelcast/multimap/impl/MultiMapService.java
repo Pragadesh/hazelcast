@@ -26,6 +26,7 @@ import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.Versions;
+import com.hazelcast.internal.config.ConfigValidator;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.map.impl.event.EventData;
 import com.hazelcast.monitor.LocalMultiMapStats;
@@ -192,7 +193,10 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
 
     @Override
     public DistributedObject createDistributedObject(String name) {
-        return new ObjectMultiMapProxy(this, nodeEngine, name);
+        MultiMapConfig multiMapConfig = nodeEngine.getConfig().findMultiMapConfig(name);
+        ConfigValidator.checkMultiMapConfig(multiMapConfig);
+
+        return new ObjectMultiMapProxy(multiMapConfig, this, nodeEngine, name);
     }
 
     @Override
@@ -534,7 +538,22 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
 
     private class Merger implements Runnable {
 
-        private static final int TIMEOUT_FACTOR = 500;
+        private static final long TIMEOUT_FACTOR = 500;
+
+        private final ILogger logger = nodeEngine.getLogger(CollectionService.class);
+        private final Semaphore semaphore = new Semaphore(0);
+        private final ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
+            @Override
+            public void onResponse(Object response) {
+                semaphore.release(1);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                logger.warning("Error while running MultiMap merge operation: " + t.getMessage());
+                semaphore.release(1);
+            }
+        };
 
         private final Map<MultiMapPartitionContainer, Map<String, MultiMapContainer>> itemMap;
 
@@ -544,23 +563,8 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
 
         @Override
         public void run() {
-            final ILogger logger = nodeEngine.getLogger(CollectionService.class);
-            final Semaphore semaphore = new Semaphore(0);
-
-            ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
-                @Override
-                public void onResponse(Object response) {
-                    semaphore.release(1);
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    logger.warning("Error while running merge operation: " + t.getMessage());
-                    semaphore.release(1);
-                }
-            };
-
             // we cannot merge into a 3.9 cluster, since not all members may understand the QueueMergeOperation
+            // RU_COMPAT_3_9
             if (nodeEngine.getClusterService().getClusterVersion().isLessThan(Versions.V3_10)) {
                 logger.info("Cluster needs to run version " + Versions.V3_10 + " to merge MultiMap instances");
                 return;
@@ -579,7 +583,7 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
                     SplitBrainMergePolicy mergePolicy = getMergePolicy(container);
                     int batchSize = container.getConfig().getMergePolicyConfig().getBatchSize();
 
-                    List<MultiMapMergeContainer> mergeEntries = new ArrayList<MultiMapMergeContainer>(batchSize);
+                    List<MultiMapMergeContainer> mergingData = new ArrayList<MultiMapMergeContainer>(batchSize);
                     for (Map.Entry<Data, MultiMapValue> multiMapValueEntry : container.getMultiMapValues().entrySet()) {
                         Data key = multiMapValueEntry.getKey();
                         MultiMapValue multiMapValue = multiMapValueEntry.getValue();
@@ -589,16 +593,16 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
                         MultiMapMergeContainer mergeContainer = new MultiMapMergeContainer(key, records,
                                 container.getCreationTime(), container.getLastAccessTime(), container.getLastUpdateTime(),
                                 multiMapValue.getHits());
-                        mergeEntries.add(mergeContainer);
+                        mergingData.add(mergeContainer);
 
-                        if (mergeEntries.size() == batchSize) {
-                            sendBatch(partitionId, name, mergePolicy, mergeEntries, mergeCallback);
-                            mergeEntries = new ArrayList<MultiMapMergeContainer>(batchSize);
+                        if (mergingData.size() == batchSize) {
+                            sendBatch(partitionId, name, mergePolicy, mergingData, mergeCallback);
+                            mergingData = new ArrayList<MultiMapMergeContainer>(batchSize);
                             operationCount++;
                         }
                     }
-                    if (mergeEntries.size() > 0) {
-                        sendBatch(partitionId, name, mergePolicy, mergeEntries, mergeCallback);
+                    if (mergingData.size() > 0) {
+                        sendBatch(partitionId, name, mergePolicy, mergingData, mergeCallback);
                         operationCount++;
                     }
                     containerMap.clear();
@@ -607,15 +611,18 @@ public class MultiMapService implements ManagedService, RemoteService, Fragmente
             itemMap.clear();
 
             try {
-                semaphore.tryAcquire(operationCount, itemCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS);
+                if (!semaphore.tryAcquire(operationCount, itemCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS)) {
+                    logger.warning("Split-brain healing for MultiMap instances didn't finish within the timeout...");
+                }
             } catch (InterruptedException e) {
-                logger.finest("Interrupted while waiting for merge operation...");
+                logger.finest("Interrupted while waiting for split-brain healing of MultiMap instances...");
+                Thread.currentThread().interrupt();
             }
         }
 
         private void sendBatch(int partitionId, String name, SplitBrainMergePolicy mergePolicy,
-                               List<MultiMapMergeContainer> mergeEntries, ExecutionCallback<Object> mergeCallback) {
-            MergeOperation operation = new MergeOperation(name, mergeEntries, mergePolicy);
+                               List<MultiMapMergeContainer> mergingData, ExecutionCallback<Object> mergeCallback) {
+            MergeOperation operation = new MergeOperation(name, mergingData, mergePolicy);
             try {
                 nodeEngine.getOperationService()
                         .invokeOnPartition(SERVICE_NAME, operation, partitionId)

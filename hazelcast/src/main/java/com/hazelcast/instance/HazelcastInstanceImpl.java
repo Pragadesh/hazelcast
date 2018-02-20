@@ -54,6 +54,8 @@ import com.hazelcast.core.Member;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.core.PartitionService;
 import com.hazelcast.core.ReplicatedMap;
+import com.hazelcast.crdt.pncounter.PNCounter;
+import com.hazelcast.crdt.pncounter.PNCounterService;
 import com.hazelcast.durableexecutor.DurableExecutorService;
 import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
@@ -149,7 +151,7 @@ public class HazelcastInstanceImpl implements HazelcastInstance, SerializationSe
         } catch (Throwable e) {
             try {
                 // Terminate the node by terminating node engine,
-                // connection manager, multicast service, operation threads, etc ... if they are exist
+                // connection manager, multicast service, operation threads, etc... if they exist
                 node.shutdown(true);
             } catch (Throwable ignored) {
                 EmptyStatement.ignore(ignored);
@@ -414,6 +416,12 @@ public class HazelcastInstanceImpl implements HazelcastInstance, SerializationSe
     @Override
     public CardinalityEstimator getCardinalityEstimator(String name) {
         return getDistributedObject(CardinalityEstimatorService.SERVICE_NAME, name);
+    }
+
+    @Override
+    public PNCounter getPNCounter(String name) {
+        checkNotNull(name, "Retrieving a PN counter instance with a null name is not allowed!");
+        return getDistributedObject(PNCounterService.SERVICE_NAME, name);
     }
 
     @Override

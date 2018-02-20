@@ -21,6 +21,7 @@ import com.hazelcast.core.IMap;
 import com.hazelcast.core.IndeterminateOperationStateException;
 import com.hazelcast.instance.BuildInfo;
 import com.hazelcast.instance.BuildInfoProvider;
+import com.hazelcast.internal.cluster.fd.ClusterFailureDetectorType;
 import com.hazelcast.internal.diagnostics.HealthMonitorLevel;
 import com.hazelcast.map.QueryResultSizeExceededException;
 import com.hazelcast.map.impl.query.QueryResultSizeLimiter;
@@ -411,19 +412,7 @@ public final class GroupProperty {
      * Default failure detector is <code>deadline</code>.
      */
     public static final HazelcastProperty HEARTBEAT_FAILURE_DETECTOR_TYPE
-            = new HazelcastProperty("hazelcast.heartbeat.failuredetector.type", "deadline");
-
-    /**
-     * The Hazelcast master node increments the member list version for each joining member. Then, member list versions
-     * are used to identify joined members with unique integers. For this algorithm to work under network partitioning scenarios
-     * without generating duplicate member list join versions for different members, a mastership-claiming node increments
-     * the member list version as specified by this parameter, multiplied by its position in the member list.
-     * The value of the parameter must be bigger than the cluster size.
-     * <p>
-     * Introduced in 3.10.
-     */
-    public static final HazelcastProperty MASTERSHIP_CLAIM_MEMBER_LIST_VERSION_INCREMENT =
-            new HazelcastProperty("hazelcast.mastership.claim.member.list.version.increment", 25);
+            = new HazelcastProperty("hazelcast.heartbeat.failuredetector.type", ClusterFailureDetectorType.DEADLINE.toString());
 
     /**
      * The interval at which the master sends the member lists are sent to other non-master members
@@ -543,6 +532,11 @@ public final class GroupProperty {
     public static final HazelcastProperty JMX_UPDATE_INTERVAL_SECONDS
             = new HazelcastProperty("hazelcast.jmx.update.interval.seconds", 5, SECONDS);
 
+    /**
+     * @deprecated as of 3.10
+     * This will be removed in future versions.
+     */
+    @Deprecated
     public static final HazelcastProperty MC_MAX_VISIBLE_INSTANCE_COUNT
             = new HazelcastProperty("hazelcast.mc.max.visible.instance.count", Integer.MAX_VALUE);
     public static final HazelcastProperty MC_MAX_VISIBLE_SLOW_OPERATION_COUNT

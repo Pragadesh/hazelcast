@@ -21,42 +21,44 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
 import com.hazelcast.spi.impl.operationservice.impl.operations.PartitionAwareOperationFactory;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
  * Inserts the merging entries for all partitions of a member via locally invoked {@link CacheMergeOperation}.
+ *
+ * @since 3.10
  */
 public class CacheMergeOperationFactory extends PartitionAwareOperationFactory {
 
     private String name;
-    private List<SplitBrainMergeEntryView<Data, Data>>[] mergeEntries;
-    private SplitBrainMergePolicy policy;
+    private List<MergingEntryHolder<Data, Data>>[] mergingEntries;
+    private SplitBrainMergePolicy mergePolicy;
 
     public CacheMergeOperationFactory() {
     }
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public CacheMergeOperationFactory(String name, int[] partitions, List<SplitBrainMergeEntryView<Data, Data>>[] mergeEntries,
-                                      SplitBrainMergePolicy policy) {
+    public CacheMergeOperationFactory(String name, int[] partitions, List<MergingEntryHolder<Data, Data>>[] mergingEntries,
+                                      SplitBrainMergePolicy mergePolicy) {
         this.name = name;
         this.partitions = partitions;
-        this.mergeEntries = mergeEntries;
-        this.policy = policy;
+        this.mergingEntries = mergingEntries;
+        this.mergePolicy = mergePolicy;
     }
 
     @Override
     public Operation createPartitionOperation(int partitionId) {
         for (int i = 0; i < partitions.length; i++) {
             if (partitions[i] == partitionId) {
-                return new CacheMergeOperation(name, mergeEntries[i], policy);
+                return new CacheMergeOperation(name, mergingEntries[i], mergePolicy);
             }
         }
         throw new IllegalArgumentException("Unknown partitionId " + partitionId + " (" + Arrays.toString(partitions) + ")");
@@ -66,13 +68,13 @@ public class CacheMergeOperationFactory extends PartitionAwareOperationFactory {
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeUTF(name);
         out.writeIntArray(partitions);
-        for (List<SplitBrainMergeEntryView<Data, Data>> entry : mergeEntries) {
-            out.writeInt(entry.size());
-            for (SplitBrainMergeEntryView<Data, Data> mergeEntry : entry) {
-                out.writeObject(mergeEntry);
+        for (List<MergingEntryHolder<Data, Data>> list : mergingEntries) {
+            out.writeInt(list.size());
+            for (MergingEntryHolder<Data, Data> mergingEntry : list) {
+                out.writeObject(mergingEntry);
             }
         }
-        out.writeObject(policy);
+        out.writeObject(mergePolicy);
     }
 
     @Override
@@ -80,17 +82,17 @@ public class CacheMergeOperationFactory extends PartitionAwareOperationFactory {
         name = in.readUTF();
         partitions = in.readIntArray();
         //noinspection unchecked
-        mergeEntries = new List[partitions.length];
-        for (int i = 0; i < partitions.length; i++) {
-            List<SplitBrainMergeEntryView<Data, Data>> list = new LinkedList<SplitBrainMergeEntryView<Data, Data>>();
+        mergingEntries = new List[partitions.length];
+        for (int partitionIndex = 0; partitionIndex < partitions.length; partitionIndex++) {
             int size = in.readInt();
-            for (int j = 0; j < size; j++) {
-                SplitBrainMergeEntryView<Data, Data> mergeEntry = in.readObject();
-                list.add(mergeEntry);
+            List<MergingEntryHolder<Data, Data>> list = new ArrayList<MergingEntryHolder<Data, Data>>(size);
+            for (int i = 0; i < size; i++) {
+                MergingEntryHolder<Data, Data> mergingEntry = in.readObject();
+                list.add(mergingEntry);
             }
-            mergeEntries[i] = list;
+            mergingEntries[partitionIndex] = list;
         }
-        policy = in.readObject();
+        mergePolicy = in.readObject();
     }
 
     @Override

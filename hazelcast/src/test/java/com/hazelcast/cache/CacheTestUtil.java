@@ -39,10 +39,12 @@ public final class CacheTestUtil {
     }
 
     /**
-     * Returns the backup entries of an {@link ICache} by a given cache name.
+     * Returns all backup entries of an {@link ICache} by a given cache name.
+     * <p>
+     * Note: This method returns all backups from all nodes and doesn't consider the replica indexes.
      *
      * @param instances the {@link HazelcastInstance} array to gather the data from
-     * @param cacheName   the cache name
+     * @param cacheName the cache name
      * @param <K>       type of the key
      * @param <V>       type of the value
      * @return a {@link Map} with the backup entries

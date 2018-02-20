@@ -345,9 +345,9 @@ public abstract class HazelcastTestSupport {
 
     /**
      * Sleeps for the given amount of time and after that, sets stop to true.
-     *
+     * <p>
      * If stop is changed to true while sleeping, the calls returns before waiting the full sleeping period.
-     *
+     * <p>
      * This method is very useful for stress tests that run for a certain amount of time. But if one of the stress tests
      * runs into a failure, the test should be aborted immediately. This is done by letting the thread set stop to true.
      *
@@ -895,6 +895,15 @@ public abstract class HazelcastTestSupport {
         });
     }
 
+    public static void assertCompletesEventually(final Future future, long timeoutSeconds) {
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertTrue("Future has not completed", future.isDone());
+            }
+        }, timeoutSeconds);
+    }
+
     public static void assertSizeEventually(int expectedSize, Collection collection) {
         assertSizeEventually(expectedSize, collection, ASSERT_TRUE_EVENTUALLY_TIMEOUT);
     }
@@ -1189,6 +1198,16 @@ public abstract class HazelcastTestSupport {
      */
     public static void assertEqualsStringFormat(String message, Object expected, Object actual) {
         assertEquals(format(message, expected, actual), expected, actual);
+    }
+
+    public static void assertBetween(String label, long actualValue, long lowerBound, long upperBound) {
+        assertTrue(format("Expected %s between %d and %d, but was %d", label, lowerBound, upperBound, actualValue),
+                actualValue >= lowerBound && actualValue <= upperBound);
+    }
+
+    public static void assertGreaterOrEquals(String label, long actualValue, long lowerBound) {
+        assertTrue(format("Expected %s greater or equals %d, but was %d", label, lowerBound, actualValue),
+                actualValue >= lowerBound);
     }
 
     public static void assertExactlyOneSuccessfulRun(AssertTask task) {

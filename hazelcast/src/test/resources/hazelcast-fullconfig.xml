@@ -247,6 +247,7 @@
         <backup-count>1</backup-count>
         <async-backup-count>0</async-backup-count>
         <quorum-ref>quorumRuleWithThreeNodes</quorum-ref>
+        <merge-policy batch-size="50">HyperLogLogMergePolicy</merge-policy>
     </cardinality-estimator>
 
     <queue name="default">
@@ -476,10 +477,11 @@
         <replication-delay-millis>12</replication-delay-millis>
         <async-fillup>false</async-fillup>
         <statistics-enabled>false</statistics-enabled>
+        <quorum-ref>quorumRuleWithThreeMembers</quorum-ref>
+        <merge-policy batch-size="100">PutIfAbsentMergePolicy</merge-policy>
         <entry-listeners>
             <entry-listener include-value="false" local="true">DummyListener</entry-listener>
         </entry-listeners>
-        <quorum-ref>quorumRuleWithThreeMembers</quorum-ref>
     </replicatedmap>
 
     <list name="default">
@@ -604,7 +606,9 @@
 
     <flake-id-generator name="default">
         <prefetch-count>100</prefetch-count>
-        <prefetch-validity-millis>10000</prefetch-validity-millis>
+        <prefetch-validity-millis>600000</prefetch-validity-millis>
+        <id-offset>0</id-offset>
+        <statistics-enabled>false</statistics-enabled>
     </flake-id-generator>
 
     <listeners>
@@ -755,5 +759,34 @@
     <quorum name="quorumRuleWithThreeMembers" enabled="true">
         <quorum-size>3</quorum-size>
         <quorum-type>READ_WRITE</quorum-type>
+    </quorum>
+
+    <crdt-replication>
+        <replication-period-millis>1000</replication-period-millis>
+        <max-concurrent-replication-targets>1</max-concurrent-replication-targets>
+    </crdt-replication>
+
+    <pn-counter name="pn-counter-1">
+        <replica-count>100</replica-count>
+        <quorum-ref>quorumRuleWithThreeMembers</quorum-ref>
+        <statistics-enabled>false</statistics-enabled>
+    </pn-counter>
+
+    <quorum enabled="true" name="member-count-quorum">
+        <quorum-type>READ_WRITE</quorum-type>
+        <quorum-size>3</quorum-size>
+        <member-count-quorum/>
+    </quorum>
+
+    <quorum enabled="true" name="probabilistic-quorum">
+        <quorum-size>3</quorum-size>
+        <quorum-type>READ_WRITE</quorum-type>
+        <probabilistic-quorum acceptable-heartbeat-pause-millis="100" max-sample-size="20" suspicion-threshold="10" />
+    </quorum>
+
+    <quorum enabled="true" name="recently-active-quorum">
+        <quorum-size>4</quorum-size>
+        <quorum-type>READ_WRITE</quorum-type>
+        <recently-active-quorum heartbeat-tolerance-millis="60000" />
     </quorum>
 </hazelcast>

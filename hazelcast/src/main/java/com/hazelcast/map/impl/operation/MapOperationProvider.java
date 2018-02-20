@@ -24,8 +24,8 @@ import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.OperationFactory;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 
 import java.util.List;
 import java.util.Set;
@@ -107,7 +107,10 @@ public interface MapOperationProvider {
 
     MapOperation createTxnSetOperation(String name, Data dataKey, Data value, long version, long ttl);
 
-    MapOperation createMergeOperation(String name, EntryView<Data, Data> entryView, MapMergePolicy policy,
+    MapOperation createLegacyMergeOperation(String name, EntryView<Data, Data> entryView, MapMergePolicy policy,
+                                            boolean disableWanReplicationEvent);
+
+    MapOperation createMergeOperation(String name, MergingEntryHolder<Data, Data> mergingValue, SplitBrainMergePolicy mergePolicy,
                                       boolean disableWanReplicationEvent);
 
     MapOperation createMapFlushOperation(String name);
@@ -151,6 +154,6 @@ public interface MapOperationProvider {
     OperationFactory createPutAllOperationFactory(String name, int[] partitions, MapEntries[] mapEntries);
 
     OperationFactory createMergeOperationFactory(String name, int[] partitions,
-                                                 List<SplitBrainMergeEntryView<Data, Data>>[] mergeEntries,
-                                                 SplitBrainMergePolicy policy);
+                                                 List<MergingEntryHolder<Data, Data>>[] mergingEntries,
+                                                 SplitBrainMergePolicy mergePolicy);
 }

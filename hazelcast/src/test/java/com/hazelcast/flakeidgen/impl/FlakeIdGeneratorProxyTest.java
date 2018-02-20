@@ -17,9 +17,12 @@
 package com.hazelcast.flakeidgen.impl;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.FlakeIdGeneratorConfig;
+import com.hazelcast.core.HazelcastException;
 import com.hazelcast.flakeidgen.impl.FlakeIdGeneratorProxy.IdBatchAndWaitTime;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.logging.Logger;
 import com.hazelcast.spi.NodeEngine;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.ParallelTest;
@@ -39,7 +42,9 @@ import static com.hazelcast.flakeidgen.impl.FlakeIdGeneratorProxy.BITS_SEQUENCE;
 import static com.hazelcast.flakeidgen.impl.FlakeIdGeneratorProxy.BITS_TIMESTAMP;
 import static com.hazelcast.flakeidgen.impl.FlakeIdGeneratorProxy.EPOCH_START;
 import static com.hazelcast.flakeidgen.impl.FlakeIdGeneratorProxy.NODE_ID_UPDATE_INTERVAL_NS;
+import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -48,8 +53,11 @@ import static org.mockito.Mockito.when;
 @Category({QuickTest.class, ParallelTest.class})
 public class FlakeIdGeneratorProxyTest {
 
-    /** Available number of IDs per second from single member */
+    /**
+     * Available number of IDs per second from single member
+     */
     private static final int IDS_PER_SECOND = 1 << BITS_SEQUENCE;
+    private static final ILogger LOG = Logger.getLogger(FlakeIdGeneratorProxyTest.class);
 
     @Rule
     public ExpectedException exception = ExpectedException.none();
@@ -59,14 +67,21 @@ public class FlakeIdGeneratorProxyTest {
 
     @Before
     public void before() {
+        before(0);
+    }
+
+    public void before(long idOffset) {
         ILogger logger = mock(ILogger.class);
         clusterService = mock(ClusterService.class);
         NodeEngine nodeEngine = mock(NodeEngine.class);
+        FlakeIdGeneratorService service = mock(FlakeIdGeneratorService.class);
         when(nodeEngine.getLogger(FlakeIdGeneratorProxy.class)).thenReturn(logger);
         when(nodeEngine.isRunning()).thenReturn(true);
-        when(nodeEngine.getConfig()).thenReturn(new Config());
+        when(nodeEngine.getConfig()).thenReturn(new Config().addFlakeIdGeneratorConfig(
+                new FlakeIdGeneratorConfig("foo").setIdOffset(idOffset)
+        ));
         when(nodeEngine.getClusterService()).thenReturn(clusterService);
-        gen = new FlakeIdGeneratorProxy("foo", nodeEngine, null);
+        gen = new FlakeIdGeneratorProxy("foo", nodeEngine, service);
     }
 
     @Test
@@ -106,10 +121,10 @@ public class FlakeIdGeneratorProxyTest {
     public void test_idsOrdered() {
         long lastId = -1;
         for (long now = EPOCH_START;
-                now < EPOCH_START + (1L << BITS_TIMESTAMP);
-                now += 365L * 24L * 60L * 60L * 1000L) {
+             now < EPOCH_START + (1L << BITS_TIMESTAMP);
+             now += 365L * 24L * 60L * 60L * 1000L) {
             long base = gen.newIdBaseLocal(now, 1234, 1).idBatch.base();
-            System.out.println("at " + new Date(now) + ", id=" + base);
+            LOG.info("at " + new Date(now) + ", id=" + base);
             assertTrue("lastId=" + lastId + ", newId=" + base, lastId < base);
             lastId = base;
         }
@@ -117,16 +132,17 @@ public class FlakeIdGeneratorProxyTest {
 
     @Test
     public void when_currentTimeBeforeAllowedRange_then_fail() {
-        gen.newIdBaseLocal(EPOCH_START, 0, 1);
-        exception.expect(AssertionError.class);
+        long lowestGoodTimestamp = EPOCH_START - (1L << BITS_TIMESTAMP);
+        gen.newIdBaseLocal(lowestGoodTimestamp, 0, 1);
+        exception.expect(HazelcastException.class);
         exception.expectMessage("Current time out of allowed range");
-        gen.newIdBaseLocal(EPOCH_START - 1, 0, 1);
+        gen.newIdBaseLocal(lowestGoodTimestamp - 1, 0, 1);
     }
 
     @Test
     public void when_currentTimeAfterAllowedRange_then_fail() {
         gen.newIdBaseLocal(EPOCH_START + (1L << BITS_TIMESTAMP) - 1, 0, 1);
-        exception.expect(AssertionError.class);
+        exception.expect(HazelcastException.class);
         exception.expectMessage("Current time out of allowed range");
         gen.newIdBaseLocal(EPOCH_START + (1L << BITS_TIMESTAMP), 0, 1);
     }
@@ -139,6 +155,51 @@ public class FlakeIdGeneratorProxyTest {
         assertEquals(id1 + (1 << BITS_NODE_ID), id2);
     }
 
+    @Test
+    public void test_init() {
+        long currentId = gen.newId();
+        assertTrue(gen.init(currentId / 2));
+        assertFalse(gen.init(currentId * 2));
+    }
+
+    @Test
+    public void test_minimumIdOffset() {
+        // By assigning MIN_VALUE idOffset we'll offset the default epoch start by (Long.MIN_VALUE >> 22) ms, that is
+        // by about 69 years. So the lowest working date will be:
+        before(Long.MIN_VALUE);
+        long id = gen.newIdBaseLocal(EPOCH_START, 1234, 1).idBatch.base();
+        LOG.info("ID=" + id);
+        assertEquals(-9223372036854774574L, id);
+    }
+
+    @Test
+    public void test_maximumIdOffset() {
+        // By assigning MIN_VALUE idOffset we'll offset the default epoch start by (Long.MIN_VALUE >> 22) ms, that is
+        // by about 69 years. So the lowest working date will be:
+        before(Long.MAX_VALUE);
+        long id = gen.newIdBaseLocal(EPOCH_START, 1234, 1).idBatch.base();
+        LOG.info("ID=" + id);
+        assertEquals(9223372036850582738L, id);
+    }
+
+    @Test
+    public void when_migrationScenario_then_idFromFlakeIdIsLarger() {
+        // This simulates the migration scenario: we take the largest IdGenerator value (a constant here)
+        // and the current FIG value. Then we configure the offset based on their difference plus the reserve
+        // and check, that the ID after idOffset is set is larger than the value from IG.
+        long largestIdGeneratorValue = 5421380884070400000L;
+        long currentFlakeGenValue = gen.newId();
+        long reserve = 274877906944L; /* this number is mentioned in FlakeIdGeneratorConfig.setIdOffset() */
+        // This test will start failing after December 17th 2058 3:52:07 UTC: after this time no idOffset will be needed.
+        assertTrue(largestIdGeneratorValue > currentFlakeGenValue);
+        // the before() call will create a new gen
+        before(largestIdGeneratorValue - currentFlakeGenValue + reserve);
+
+        // Then
+        long newFlakeGenValue = gen.newId();
+        assertTrue(newFlakeGenValue > largestIdGeneratorValue);
+        assertTrue(newFlakeGenValue - largestIdGeneratorValue < MINUTES.toMillis(10) * (1 << (BITS_NODE_ID + BITS_SEQUENCE)));
+    }
 
 
     // #### Tests pertaining to wait time ####

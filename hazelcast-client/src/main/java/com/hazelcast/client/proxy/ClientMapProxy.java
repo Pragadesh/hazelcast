@@ -182,7 +182,8 @@ import static java.util.Collections.emptyMap;
  * @param <V> value
  */
 @SuppressWarnings("checkstyle:classdataabstractioncoupling")
-public class ClientMapProxy<K, V> extends ClientProxy implements IMap<K, V>, EventJournalReader<EventJournalMapEvent<K, V>> {
+public class ClientMapProxy<K, V> extends ClientProxy
+        implements IMap<K, V>, EventJournalReader<EventJournalMapEvent<K, V>> {
 
     protected static final String NULL_LISTENER_IS_NOT_ALLOWED = "Null listener is not allowed!";
     protected static final String NULL_KEY_IS_NOT_ALLOWED = "Null key is not allowed!";
@@ -1490,7 +1491,7 @@ public class ClientMapProxy<K, V> extends ClientProxy implements IMap<K, V>, Eve
     private QueryCache<K, V> createQueryCache(QueryCacheRequest request) {
         SubscriberContext subscriberContext = queryCacheContext.getSubscriberContext();
         QueryCacheEndToEndProvider queryCacheEndToEndProvider = subscriberContext.getEndToEndQueryCacheProvider();
-        return queryCacheEndToEndProvider.getOrCreateQueryCache(request.getMapName(), request.getCacheName(),
+        return queryCacheEndToEndProvider.getOrCreateQueryCache(request.getMapName(), request.getCacheId(),
                 new ClientQueryCacheEndToEndConstructor(request));
     }
 
@@ -1659,7 +1660,8 @@ public class ClientMapProxy<K, V> extends ClientProxy implements IMap<K, V>, Eve
             int maxSize,
             int partitionId,
             com.hazelcast.util.function.Predicate<? super EventJournalMapEvent<K, V>> predicate,
-            Projection<? super EventJournalMapEvent<K, V>, T> projection) {
+            Projection<? super EventJournalMapEvent<K, V>, ? extends T> projection
+    ) {
         final SerializationService ss = getSerializationService();
         final ClientMessage request = MapEventJournalReadCodec.encodeRequest(
                 name, startSequence, minSize, maxSize, ss.toData(predicate), ss.toData(projection));

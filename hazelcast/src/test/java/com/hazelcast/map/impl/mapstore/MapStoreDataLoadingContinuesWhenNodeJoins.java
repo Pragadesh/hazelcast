@@ -30,7 +30,6 @@ import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParametersRunnerFactory;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.SlowTest;
 import com.hazelcast.util.EmptyStatement;
 import org.junit.After;
@@ -43,7 +42,6 @@ import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -60,6 +58,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode.EAGER;
 import static com.hazelcast.config.MapStoreConfig.InitialLoadMode.LAZY;
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -89,9 +88,9 @@ public class MapStoreDataLoadingContinuesWhenNodeJoins extends HazelcastTestSupp
 
     @Parameters(name = "{0}")
     public static Collection<Object[]> parameters() {
-        return Arrays.asList(new Object[][]{
+        return asList(new Object[][]{
                 {LAZY},
-                {EAGER}
+                {EAGER},
         });
     }
 

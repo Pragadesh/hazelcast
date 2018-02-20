@@ -34,6 +34,7 @@ import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.Member;
 import com.hazelcast.core.MembershipListener;
 import com.hazelcast.core.MigrationListener;
+import com.hazelcast.crdt.CRDTReplicationMigrationService;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.ascii.TextCommandServiceImpl;
 import com.hazelcast.internal.cluster.impl.ClusterJoinManager;
@@ -102,6 +103,7 @@ import static com.hazelcast.spi.properties.GroupProperty.LOGGING_TYPE;
 import static com.hazelcast.spi.properties.GroupProperty.MAX_JOIN_SECONDS;
 import static com.hazelcast.spi.properties.GroupProperty.SHUTDOWNHOOK_ENABLED;
 import static com.hazelcast.spi.properties.GroupProperty.SHUTDOWNHOOK_POLICY;
+import static com.hazelcast.util.StringUtil.isNullOrEmpty;
 import static com.hazelcast.util.ThreadUtil.createThreadName;
 import static java.security.AccessController.doPrivileged;
 
@@ -199,6 +201,7 @@ public class Node {
             logger = loggingService.getLogger(Node.class.getName());
 
             nodeExtension.printNodeInfo();
+            logGroupPasswordInfo();
             nodeExtension.beforeStart();
 
             serializationService = nodeExtension.createSerializationService();
@@ -419,6 +422,7 @@ public class Node {
         }
 
         if (!terminate) {
+            replicateCRDTs();
             final int maxWaitSeconds = properties.getSeconds(GRACEFUL_SHUTDOWN_MAX_WAIT);
             if (!partitionService.prepareToSafeShutdown(maxWaitSeconds, TimeUnit.SECONDS)) {
                 logger.warning("Graceful shutdown could not be completed in " + maxWaitSeconds + " seconds!");
@@ -454,6 +458,16 @@ public class Node {
                 shuttingDown.compareAndSet(true, false);
             }
         }
+    }
+
+    /**
+     * Synchronously replicate the unreplicated CRDT states to a data member
+     * in the cluster.
+     */
+    private void replicateCRDTs() {
+        final CRDTReplicationMigrationService replicationMigrationService
+                = nodeEngine.getService(CRDTReplicationMigrationService.SERVICE_NAME);
+        replicationMigrationService.syncReplicateDirtyCRDTs();
     }
 
     private void shutdownServices(boolean terminate) {
@@ -509,7 +523,7 @@ public class Node {
         }
     }
 
-    private boolean setShuttingDown() {
+    public boolean setShuttingDown() {
         if (shuttingDown.compareAndSet(false, true)) {
             state = NodeState.PASSIVE;
             return true;
@@ -787,4 +801,12 @@ public class Node {
         return attributes;
     }
 
+    private void logGroupPasswordInfo() {
+        if (!isNullOrEmpty(config.getGroupConfig().getPassword())) {
+            logger.info("A non-empty group password is configured for the Hazelcast member."
+                    + " Starting with Hazelcast version 3.8.2, members with the same group name,"
+                    + " but with different group passwords (that do not use authentication) form a cluster."
+                    + " The group password configuration will be removed completely in a future relase.");
+        }
+    }
 }

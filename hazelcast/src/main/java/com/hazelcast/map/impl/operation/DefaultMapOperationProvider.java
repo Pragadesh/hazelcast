@@ -29,11 +29,13 @@ import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.spi.OperationFactory;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 
 import java.util.List;
 import java.util.Set;
+
+import static java.util.Collections.singletonList;
 
 /**
  * Creates map operations.
@@ -186,9 +188,15 @@ public class DefaultMapOperationProvider implements MapOperationProvider {
     }
 
     @Override
-    public MapOperation createMergeOperation(String name, EntryView<Data, Data> mergingEntry,
-                                             MapMergePolicy policy, boolean disableWanReplicationEvent) {
+    public MapOperation createLegacyMergeOperation(String name, EntryView<Data, Data> mergingEntry,
+                                                   MapMergePolicy policy, boolean disableWanReplicationEvent) {
         return new LegacyMergeOperation(name, mergingEntry, policy, disableWanReplicationEvent);
+    }
+
+    @Override
+    public MapOperation createMergeOperation(String name, MergingEntryHolder<Data, Data> mergingValue,
+                                             SplitBrainMergePolicy mergePolicy, boolean disableWanReplicationEvent) {
+        return new MergeOperation(name, singletonList(mergingValue), mergePolicy, disableWanReplicationEvent);
     }
 
     @Override
@@ -246,9 +254,9 @@ public class DefaultMapOperationProvider implements MapOperationProvider {
 
     @Override
     public OperationFactory createMergeOperationFactory(String name, int[] partitions,
-                                                        List<SplitBrainMergeEntryView<Data, Data>>[] mergeEntries,
-                                                        SplitBrainMergePolicy policy) {
-        return new MergeOperationFactory(name, partitions, mergeEntries, policy);
+                                                        List<MergingEntryHolder<Data, Data>>[] mergingEntries,
+                                                        SplitBrainMergePolicy mergePolicy) {
+        return new MergeOperationFactory(name, partitions, mergingEntries, mergePolicy);
     }
 
     @Override

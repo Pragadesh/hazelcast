@@ -46,6 +46,7 @@ import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Tests different split-brain scenarios for {@link IMap}.
@@ -60,6 +61,7 @@ import static org.junit.Assert.assertTrue;
 @RunWith(Parameterized.class)
 @UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
 @Category({QuickTest.class, ParallelTest.class})
+@SuppressWarnings("WeakerAccess")
 public class LegacyMapSplitBrainTest extends SplitBrainTestSupport {
 
     @Parameters(name = "format:{0}, mergePolicy:{1}")
@@ -82,8 +84,8 @@ public class LegacyMapSplitBrainTest extends SplitBrainTestSupport {
     @Parameter(value = 1)
     public Class<? extends MapMergePolicy> mergePolicyClass;
 
-    private String mapNameA = randomMapName("mapA-");
-    private String mapNameB = randomMapName("mapB-");
+    protected String mapNameA = randomMapName("mapA-");
+    protected String mapNameB = randomMapName("mapB-");
     private IMap<Object, Object> mapA1;
     private IMap<Object, Object> mapA2;
     private IMap<Object, Object> mapB1;
@@ -133,21 +135,18 @@ public class LegacyMapSplitBrainTest extends SplitBrainTestSupport {
 
         if (mergePolicyClass == IgnoreMergingEntryMapMergePolicy.class) {
             afterSplitDiscardMergePolicy();
-        }
-        if (mergePolicyClass == HigherHitsMapMergePolicy.class) {
+        } else if (mergePolicyClass == HigherHitsMapMergePolicy.class) {
             afterSplitHigherHitsMergePolicy();
-        }
-        if (mergePolicyClass == LatestUpdateMapMergePolicy.class) {
+        } else if (mergePolicyClass == LatestUpdateMapMergePolicy.class) {
             afterSplitLatestUpdateMergePolicy();
-        }
-        if (mergePolicyClass == PassThroughMergePolicy.class) {
+        } else if (mergePolicyClass == PassThroughMergePolicy.class) {
             afterSplitPassThroughMergePolicy();
-        }
-        if (mergePolicyClass == PutIfAbsentMapMergePolicy.class) {
+        } else if (mergePolicyClass == PutIfAbsentMapMergePolicy.class) {
             afterSplitPutIfAbsentMergePolicy();
-        }
-        if (mergePolicyClass == CustomLegacyMergePolicy.class) {
+        } else if (mergePolicyClass == CustomLegacyMergePolicy.class) {
             afterSplitCustomMergePolicy();
+        } else {
+            fail();
         }
     }
 
@@ -163,21 +162,18 @@ public class LegacyMapSplitBrainTest extends SplitBrainTestSupport {
 
         if (mergePolicyClass == IgnoreMergingEntryMapMergePolicy.class) {
             afterMergeDiscardMergePolicy();
-        }
-        if (mergePolicyClass == HigherHitsMapMergePolicy.class) {
+        } else if (mergePolicyClass == HigherHitsMapMergePolicy.class) {
             afterMergeHigherHitsMergePolicy();
-        }
-        if (mergePolicyClass == LatestUpdateMapMergePolicy.class) {
+        } else if (mergePolicyClass == LatestUpdateMapMergePolicy.class) {
             afterMergeLatestUpdateMergePolicy();
-        }
-        if (mergePolicyClass == PassThroughMergePolicy.class) {
+        } else if (mergePolicyClass == PassThroughMergePolicy.class) {
             afterMergePassThroughMergePolicy();
-        }
-        if (mergePolicyClass == PutIfAbsentMapMergePolicy.class) {
+        } else if (mergePolicyClass == PutIfAbsentMapMergePolicy.class) {
             afterMergePutIfAbsentMergePolicy();
-        }
-        if (mergePolicyClass == CustomLegacyMergePolicy.class) {
+        } else if (mergePolicyClass == CustomLegacyMergePolicy.class) {
             afterMergeCustomMergePolicy();
+        } else {
+            fail();
         }
     }
 
@@ -348,7 +344,7 @@ public class LegacyMapSplitBrainTest extends SplitBrainTestSupport {
         assertEquals(1, backupMapA.size());
     }
 
-    private static class CustomLegacyMergePolicy implements MapMergePolicy, DataSerializable {
+    protected static class CustomLegacyMergePolicy implements MapMergePolicy, DataSerializable {
 
         @Override
         public Object merge(String mapName, EntryView mergingEntry, EntryView existingEntry) {

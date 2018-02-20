@@ -29,8 +29,9 @@ import com.hazelcast.map.impl.record.RecordFactory;
 import com.hazelcast.map.merge.MapMergePolicy;
 import com.hazelcast.monitor.LocalRecordStoreStats;
 import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.SplitBrainAwareDataContainer;
+import com.hazelcast.spi.SplitBrainMergePolicy;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
+import com.hazelcast.spi.merge.MergingEntryHolder;
 
 import java.util.Iterator;
 import java.util.List;
@@ -39,7 +40,7 @@ import java.util.Set;
 /**
  * Defines a record-store.
  */
-public interface RecordStore<R extends Record> extends SplitBrainAwareDataContainer<Data, Object, Boolean> {
+public interface RecordStore<R extends Record> {
 
     /**
      * Default TTL value of a record.
@@ -167,7 +168,23 @@ public interface RecordStore<R extends Record> extends SplitBrainAwareDataContai
      */
     Object putFromLoadBackup(Data key, Object value);
 
-    boolean merge(Data dataKey, EntryView mergingEntryView, MapMergePolicy mergePolicy);
+    /**
+     * Merges the given {@link EntryView} via the given {@link MapMergePolicy}.
+     *
+     * @param mergingEntry the {@link EntryView} instance to merge
+     * @param mergePolicy  the {@link MapMergePolicy} instance to apply
+     * @return {@code true} if merge is applied, otherwise {@code false}
+     */
+    boolean merge(Data dataKey, EntryView mergingEntry, MapMergePolicy mergePolicy);
+
+    /**
+     * Merges the given {@link MergingEntryHolder} via the given {@link SplitBrainMergePolicy}.
+     *
+     * @param mergingEntry the {@link MergingEntryHolder} instance to merge
+     * @param mergePolicy  the {@link SplitBrainMergePolicy} instance to apply
+     * @return {@code true} if merge is applied, otherwise {@code false}
+     */
+    boolean merge(MergingEntryHolder<Data, Object> mergingEntry, SplitBrainMergePolicy mergePolicy);
 
     R getRecord(Data key);
 

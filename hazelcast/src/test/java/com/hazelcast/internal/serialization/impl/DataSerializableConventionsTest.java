@@ -19,16 +19,15 @@ package com.hazelcast.internal.serialization.impl;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import com.hazelcast.internal.serialization.DataSerializerHook;
+import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.nio.serialization.DataSerializableFactory;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.SerializableByConvention;
-import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.spi.AbstractLocalOperation;
 import com.hazelcast.spi.annotation.PrivateApi;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.ConcurrentReferenceHashMap;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -138,7 +137,7 @@ public class DataSerializableConventionsTest {
         serializableClasses.removeAll(allAnnotatedClasses);
 
         // exclude @SerializableByConvention classes
-        Set<?> serializableByConventions = REFLECTIONS.getTypesAnnotatedWith(SerializableByConvention. class , true);
+        Set<?> serializableByConventions = REFLECTIONS.getTypesAnnotatedWith(SerializableByConvention.class, true);
         serializableClasses.removeAll(serializableByConventions);
 
         if (serializableClasses.size() > 0) {
@@ -253,14 +252,14 @@ public class DataSerializableConventionsTest {
                 int typeId = instance.getId();
 
                 if (!factories.containsKey(factoryId)) {
-                    fail("Factory with ID " + factoryId + " declared in " + klass + " not found. Is such a factory ID "
-                            + "registered?");
+                    fail("Factory with ID " + factoryId + " declared in " + klass + " not found."
+                            + " Is such a factory ID registered?");
                 }
 
                 IdentifiedDataSerializable instanceFromFactory = factories.get(factoryId).create(typeId);
                 assertNotNull("Factory with ID " + factoryId + " returned null for type with ID " + typeId, instanceFromFactory);
-                assertTrue("Factory with ID " + factoryId + " instantiated an object of " + instanceFromFactory.getClass() +
-                                " while expected type was " + instance.getClass(),
+                assertTrue("Factory with ID " + factoryId + " instantiated an object of " + instanceFromFactory.getClass()
+                                + " while expected type was " + instance.getClass(),
                         instanceFromFactory.getClass().equals(instance.getClass()));
             } catch (UnsupportedOperationException ignored) {
                 // expected from local operation classes not meant for serialization
@@ -300,8 +299,6 @@ public class DataSerializableConventionsTest {
     }
 
     /**
-     * @param klass
-     * @param inheritedClass
      * @return {@code true} when klass has a superclass that implements or is itself of type {@code inheritedClass}
      */
     private boolean inheritsClassFromPublicClass(Class klass, Class inheritedClass) {
@@ -323,8 +320,8 @@ public class DataSerializableConventionsTest {
             if (hierarchyIteratingClass.getSuperclass().equals(inheritedClass)) {
                 return true;
             }
-            if (inheritedClass.isAssignableFrom(hierarchyIteratingClass.getSuperclass()) &&
-                    isPublicClass(hierarchyIteratingClass.getSuperclass())) {
+            if (inheritedClass.isAssignableFrom(hierarchyIteratingClass.getSuperclass())
+                    && isPublicClass(hierarchyIteratingClass.getSuperclass())) {
                 return true;
             }
             hierarchyIteratingClass = hierarchyIteratingClass.getSuperclass();

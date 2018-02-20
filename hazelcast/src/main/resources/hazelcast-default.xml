@@ -237,6 +237,13 @@
         <merge-policy batch-size="100">PutIfAbsentMergePolicy</merge-policy>
     </multimap>
 
+    <replicatedmap name="default">
+        <in-memory-format>OBJECT</in-memory-format>
+        <async-fillup>true</async-fillup>
+        <statistics-enabled>true</statistics-enabled>
+        <merge-policy batch-size="100">PutIfAbsentMergePolicy</merge-policy>
+    </replicatedmap>
+
     <list name="default">
         <backup-count>1</backup-count>
         <merge-policy batch-size="100">PutIfAbsentMergePolicy</merge-policy>
@@ -281,6 +288,8 @@
     <flake-id-generator name="default">
         <prefetch-count>100</prefetch-count>
         <prefetch-validity-millis>600000</prefetch-validity-millis>
+        <id-offset>0</id-offset>
+        <statistics-enabled>true</statistics-enabled>
     </flake-id-generator>
 
     <atomic-long name="default">
@@ -303,8 +312,24 @@
 
     <cardinality-estimator name="default">
         <backup-count>1</backup-count>
-        <merge-policy batch-size="100">HyperLogLogMergePolicy</merge-policy>
         <async-backup-count>0</async-backup-count>
+        <merge-policy batch-size="100">HyperLogLogMergePolicy</merge-policy>
     </cardinality-estimator>
 
+    <scheduled-executor-service name="default">
+        <capacity>100</capacity>
+        <durability>1</durability>
+        <pool-size>16</pool-size>
+        <merge-policy batch-size="100">PutIfAbsentMergePolicy</merge-policy>
+    </scheduled-executor-service>
+
+    <crdt-replication>
+        <replication-period-millis>1000</replication-period-millis>
+        <max-concurrent-replication-targets>1</max-concurrent-replication-targets>
+    </crdt-replication>
+
+    <pn-counter name="default">
+        <replica-count>2147483647</replica-count>
+        <statistics-enabled>true</statistics-enabled>
+    </pn-counter>
 </hazelcast>

@@ -40,10 +40,10 @@ import com.hazelcast.spi.PartitionReplicationEvent;
 import com.hazelcast.spi.QuorumAwareService;
 import com.hazelcast.spi.RemoteService;
 import com.hazelcast.spi.SplitBrainHandlerService;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
 import com.hazelcast.spi.TransactionalService;
 import com.hazelcast.spi.merge.DiscardMergePolicy;
+import com.hazelcast.spi.merge.MergingValueHolder;
 import com.hazelcast.spi.merge.SplitBrainMergePolicyProvider;
 import com.hazelcast.spi.partition.IPartitionService;
 import com.hazelcast.spi.partition.MigrationEndpoint;
@@ -60,7 +60,7 @@ import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.spi.merge.SplitBrainEntryViews.createSplitBrainMergeEntryView;
+import static com.hazelcast.spi.impl.merge.MergingHolders.createMergeHolder;
 import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static com.hazelcast.util.MapUtil.createHashMap;
 
@@ -232,7 +232,22 @@ public abstract class CollectionService implements ManagedService, RemoteService
 
     private class Merger implements Runnable {
 
-        private static final int TIMEOUT_FACTOR = 500;
+        private static final long TIMEOUT_FACTOR = 500;
+
+        private final ILogger logger = nodeEngine.getLogger(CollectionService.class);
+        private final Semaphore semaphore = new Semaphore(0);
+        private final ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
+            @Override
+            public void onResponse(Object response) {
+                semaphore.release(1);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                logger.warning("Error while running collection merge operation: " + t.getMessage());
+                semaphore.release(1);
+            }
+        };
 
         private final Map<Integer, Map<CollectionContainer, List<CollectionItem>>> itemMap;
 
@@ -242,23 +257,8 @@ public abstract class CollectionService implements ManagedService, RemoteService
 
         @Override
         public void run() {
-            final ILogger logger = nodeEngine.getLogger(CollectionService.class);
-            final Semaphore semaphore = new Semaphore(0);
-
-            ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
-                @Override
-                public void onResponse(Object response) {
-                    semaphore.release(1);
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    logger.warning("Error while running merge operation: " + t.getMessage());
-                    semaphore.release(1);
-                }
-            };
-
             // we cannot merge into a 3.9 cluster, since not all members may understand the CollectionMergeOperation
+            // RU_COMPAT_3_9
             if (nodeEngine.getClusterService().getClusterVersion().isLessThan(Versions.V3_10)) {
                 logger.info("Cluster needs to run version " + Versions.V3_10 + " to merge collection instances");
                 return;
@@ -266,7 +266,7 @@ public abstract class CollectionService implements ManagedService, RemoteService
 
             int itemCount = 0;
             int operationCount = 0;
-            List<SplitBrainMergeEntryView<Long, Data>> mergeEntries;
+            List<MergingValueHolder<Data>> mergingValues;
             for (Map.Entry<Integer, Map<CollectionContainer, List<CollectionItem>>> partitionEntry : itemMap.entrySet()) {
                 int partitionId = partitionEntry.getKey();
                 Map<CollectionContainer, List<CollectionItem>> containerMap = partitionEntry.getValue();
@@ -278,21 +278,21 @@ public abstract class CollectionService implements ManagedService, RemoteService
                     int batchSize = container.getConfig().getMergePolicyConfig().getBatchSize();
                     SplitBrainMergePolicy mergePolicy = getMergePolicy(container);
 
-                    mergeEntries = new ArrayList<SplitBrainMergeEntryView<Long, Data>>();
+                    mergingValues = new ArrayList<MergingValueHolder<Data>>();
                     for (CollectionItem item : itemList) {
-                        SplitBrainMergeEntryView<Long, Data> entryView = createSplitBrainMergeEntryView(item);
-                        mergeEntries.add(entryView);
+                        MergingValueHolder<Data> mergingValue = createMergeHolder(item);
+                        mergingValues.add(mergingValue);
                         itemCount++;
 
-                        if (mergeEntries.size() == batchSize) {
-                            sendBatch(partitionId, name, mergePolicy, mergeEntries, mergeCallback);
-                            mergeEntries = new ArrayList<SplitBrainMergeEntryView<Long, Data>>(batchSize);
+                        if (mergingValues.size() == batchSize) {
+                            sendBatch(partitionId, name, mergePolicy, mergingValues, mergeCallback);
+                            mergingValues = new ArrayList<MergingValueHolder<Data>>(batchSize);
                             operationCount++;
                         }
                     }
                     itemList.clear();
-                    if (mergeEntries.size() > 0) {
-                        sendBatch(partitionId, name, mergePolicy, mergeEntries, mergeCallback);
+                    if (mergingValues.size() > 0) {
+                        sendBatch(partitionId, name, mergePolicy, mergingValues, mergeCallback);
                         operationCount++;
                     }
                 }
@@ -300,15 +300,18 @@ public abstract class CollectionService implements ManagedService, RemoteService
             itemMap.clear();
 
             try {
-                semaphore.tryAcquire(operationCount, itemCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS);
+                if (!semaphore.tryAcquire(operationCount, itemCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS)) {
+                    logger.warning("Split-brain healing for collections didn't finish within the timeout...");
+                }
             } catch (InterruptedException e) {
-                logger.finest("Interrupted while waiting for merge operation...");
+                logger.finest("Interrupted while waiting for split-brain healing of collections...");
+                Thread.currentThread().interrupt();
             }
         }
 
         private void sendBatch(int partitionId, String name, SplitBrainMergePolicy mergePolicy,
-                               List<SplitBrainMergeEntryView<Long, Data>> mergeEntries, ExecutionCallback<Object> mergeCallback) {
-            CollectionOperation operation = new CollectionMergeOperation(name, mergePolicy, mergeEntries);
+                               List<MergingValueHolder<Data>> mergingValues, ExecutionCallback<Object> mergeCallback) {
+            CollectionOperation operation = new CollectionMergeOperation(name, mergePolicy, mergingValues);
             try {
                 nodeEngine.getOperationService()
                         .invokeOnPartition(getServiceName(), operation, partitionId)

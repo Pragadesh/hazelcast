@@ -27,9 +27,8 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.SplitBrainAwareDataContainer;
-import com.hazelcast.spi.SplitBrainMergeEntryView;
 import com.hazelcast.spi.SplitBrainMergePolicy;
+import com.hazelcast.spi.merge.MergingValueHolder;
 import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.transaction.TransactionException;
 import com.hazelcast.util.Clock;
@@ -50,7 +49,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.collection.impl.collection.CollectionContainer.ID_PROMOTION_OFFSET;
-import static com.hazelcast.spi.merge.SplitBrainEntryViews.createSplitBrainMergeEntryView;
+import static com.hazelcast.spi.impl.merge.MergingHolders.createMergeHolder;
 import static com.hazelcast.util.MapUtil.createHashMap;
 import static com.hazelcast.util.MapUtil.createLinkedHashMap;
 import static com.hazelcast.util.SetUtil.createHashSet;
@@ -64,7 +63,7 @@ import static com.hazelcast.util.SetUtil.createHashSet;
  * </ul>
  */
 @SuppressWarnings("checkstyle:methodcount")
-public class QueueContainer implements IdentifiedDataSerializable, SplitBrainAwareDataContainer<Long, Data, QueueItem> {
+public class QueueContainer implements IdentifiedDataSerializable {
 
     /**
      * Contains item ID to queue item mappings for current transactions
@@ -1096,14 +1095,21 @@ public class QueueContainer implements IdentifiedDataSerializable, SplitBrainAwa
         idGenerator = Math.max(itemId + 1, idGenerator);
     }
 
-    @Override
-    public QueueItem merge(SplitBrainMergeEntryView<Long, Data> mergingEntry, SplitBrainMergePolicy mergePolicy) {
-        mergePolicy.setSerializationService(nodeEngine.getSerializationService());
-
+    /**
+     * Merges the given {@link MergingValueHolder} via the given {@link SplitBrainMergePolicy}.
+     *
+     * @param mergingValue the {@link MergingValueHolder} instance to merge
+     * @param mergePolicy  the {@link SplitBrainMergePolicy} instance to apply
+     * @return the used {@link QueueItem} if merge is applied, otherwise {@code null}
+     */
+    public QueueItem merge(MergingValueHolder<Data> mergingValue, SplitBrainMergePolicy mergePolicy) {
+        SerializationService serializationService = nodeEngine.getSerializationService();
+        serializationService.getManagedContext().initialize(mergePolicy);
+        mergingValue.setSerializationService(serializationService);
         // try to find an existing item with the same value
         QueueItem existingItem = null;
         for (QueueItem item : getItemQueue()) {
-            if (mergingEntry.getValue().equals(item.getData())) {
+            if (mergingValue.getValue().equals(item.getData())) {
                 existingItem = item;
                 break;
             }
@@ -1111,7 +1117,7 @@ public class QueueContainer implements IdentifiedDataSerializable, SplitBrainAwa
 
         QueueItem mergedItem = null;
         if (existingItem == null) {
-            Data newValue = mergePolicy.merge(mergingEntry, null);
+            Data newValue = mergePolicy.merge(mergingValue, null);
             if (newValue != null) {
                 QueueItem item = new QueueItem(this, nextId(), newValue);
                 if (getItemQueue().add(item)) {
@@ -1119,9 +1125,10 @@ public class QueueContainer implements IdentifiedDataSerializable, SplitBrainAwa
                 }
             }
         } else {
-            SplitBrainMergeEntryView<Long, Data> existingEntry = createSplitBrainMergeEntryView(existingItem);
-            Data newValue = mergePolicy.merge(mergingEntry, existingEntry);
-            if (newValue != null && !newValue.equals(existingEntry.getValue())) {
+            MergingValueHolder<Data> existingValue = createMergeHolder(existingItem);
+            existingValue.setSerializationService(serializationService);
+            Data newValue = mergePolicy.merge(mergingValue, existingValue);
+            if (newValue != null && !newValue.equals(existingValue.getValue())) {
                 existingItem.setData(newValue);
                 mergedItem = existingItem;
             }

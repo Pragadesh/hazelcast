@@ -20,6 +20,7 @@ import com.hazelcast.client.HazelcastClient;
 import com.hazelcast.client.config.ClientAwsConfig;
 import com.hazelcast.client.config.ClientConfig;
 import com.hazelcast.client.config.ClientConnectionStrategyConfig;
+import com.hazelcast.client.config.ClientFlakeIdGeneratorConfig;
 import com.hazelcast.client.config.ClientIcmpPingConfig;
 import com.hazelcast.client.config.ClientNetworkConfig;
 import com.hazelcast.client.config.ClientUserCodeDeploymentConfig;
@@ -35,7 +36,6 @@ import com.hazelcast.config.MapIndexConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.config.PredicateConfig;
 import com.hazelcast.config.QueryCacheConfig;
-import com.hazelcast.config.FlakeIdGeneratorConfig;
 import com.hazelcast.config.SSLConfig;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
@@ -238,8 +238,6 @@ public class HazelcastClientBeanDefinitionParser extends AbstractHazelcastBeanDe
                 String name = cleanNodeName(child);
                 if ("properties".equals(name)) {
                     handleProperties(child, sslConfigBuilder);
-                } else if ("host-verification".equals(name)) {
-                    handleHostVerification(child, sslConfigBuilder);
                 }
             }
             networkConfigBuilder.addPropertyValue("SSLConfig", sslConfigBuilder.getBeanDefinition());
@@ -270,7 +268,7 @@ public class HazelcastClientBeanDefinitionParser extends AbstractHazelcastBeanDe
         }
 
         private void handleFlakeIdGenerator(Node node) {
-            BeanDefinitionBuilder configBuilder = createBeanBuilder(FlakeIdGeneratorConfig.class);
+            BeanDefinitionBuilder configBuilder = createBeanBuilder(ClientFlakeIdGeneratorConfig.class);
             fillAttributeValues(node, configBuilder);
             String name = getAttribute(node, "name");
             flakeIdGeneratorConfigMap.put(name, configBuilder.getBeanDefinition());

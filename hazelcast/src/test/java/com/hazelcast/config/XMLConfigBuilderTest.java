@@ -20,6 +20,8 @@ import com.hazelcast.config.helpers.DummyMapStore;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IMap;
 import com.hazelcast.quorum.QuorumType;
+import com.hazelcast.quorum.impl.ProbabilisticQuorumFunction;
+import com.hazelcast.quorum.impl.RecentlyActiveQuorumFunction;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
@@ -244,12 +246,6 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
                 + "          <properties>\r\n"
                 + "            <property name=\"protocol\">TLS</property>\r\n"
                 + "          </properties>\r\n"
-                + "          <host-verification policy-class-name=\"com.example.Verifier\"\r\n"
-                + "              enabled-on-server=\"true\">\r\n"
-                + "            <properties>\r\n"
-                + "              <property name=\"host\">127.0.0.1</property>\r\n"
-                + "            </properties>\r\n"
-                + "          </host-verification>\r\n"
                 + "        </ssl>\r\n"
                 + "    </network>\n"
                 + HAZELCAST_END_TAG;
@@ -260,12 +256,6 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
         assertEquals("com.hazelcast.nio.ssl.BasicSSLContextFactory", sslConfig.getFactoryClassName());
         assertEquals(1, sslConfig.getProperties().size());
         assertEquals("TLS", sslConfig.getProperties().get("protocol"));
-
-        HostVerificationConfig hostVerification = sslConfig.getHostVerificationConfig();
-        assertEquals("com.example.Verifier", hostVerification.getPolicyClassName());
-        assertTrue(hostVerification.isEnabledOnServer());
-        assertEquals(1, hostVerification.getProperties().size());
-        assertEquals("127.0.0.1", hostVerification.getProperties().get("host"));
     }
 
     @Test
@@ -603,9 +593,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
         Config config = new ClasspathXmlConfig(fileName);
         config.getGroupConfig().setPassword(pass);
 
-        String xml = new ConfigXmlGenerator(true).generate(config);
+        String xml = new ConfigXmlGenerator(true, false).generate(config);
         Config config2 = new InMemoryXmlConfig(xml);
-        config2.getGroupConfig().setPassword(pass);
 
         assertTrue(ConfigCompatibilityChecker.isCompatible(config, config2));
     }
@@ -1049,8 +1038,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
 
     @Test
     public void testPartitionGroupZoneAware() {
-        String xml = HAZELCAST_START_TAG +
-                "<partition-group enabled=\"true\" group-type=\"ZONE_AWARE\" />"
+        String xml = HAZELCAST_START_TAG
+                + "<partition-group enabled=\"true\" group-type=\"ZONE_AWARE\" />"
                 + HAZELCAST_END_TAG;
 
         Config config = buildConfig(xml);
@@ -1059,8 +1048,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
 
     @Test
     public void testPartitionGroupSPI() {
-        String xml = HAZELCAST_START_TAG +
-                "<partition-group enabled=\"true\" group-type=\"SPI\" />"
+        String xml = HAZELCAST_START_TAG
+                + "<partition-group enabled=\"true\" group-type=\"SPI\" />"
                 + HAZELCAST_END_TAG;
 
         Config config = buildConfig(xml);
@@ -1173,6 +1162,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
                 + "<flake-id-generator name='gen'>"
                 + "  <prefetch-count>3</prefetch-count>"
                 + "  <prefetch-validity-millis>10</prefetch-validity-millis>"
+                + "  <id-offset>20</id-offset>"
+                + "  <statistics-enabled>false</statistics-enabled>"
                 + "</flake-id-generator>"
                 + HAZELCAST_END_TAG;
         Config config = buildConfig(xml);
@@ -1180,6 +1171,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
         assertEquals("gen", fConfig.getName());
         assertEquals(3, fConfig.getPrefetchCount());
         assertEquals(10L, fConfig.getPrefetchValidityMillis());
+        assertEquals(20L, fConfig.getIdOffset());
+        assertFalse(fConfig.isStatisticsEnabled());
     }
 
     @Test(expected = InvalidConfigurationException.class)
@@ -1480,6 +1473,7 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
                 + "           <quorum-listener>com.abc.my.quorum.listener</quorum-listener>"
                 + "           <quorum-listener>com.abc.my.second.listener</quorum-listener>"
                 + "       </quorum-listeners> "
+                + "        <quorum-function-class-name>com.hazelcast.SomeQuorumFunction</quorum-function-class-name>"
                 + "    </quorum>\n"
                 + HAZELCAST_END_TAG;
 
@@ -1489,6 +1483,127 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
         assertFalse(quorumConfig.getListenerConfigs().isEmpty());
         assertEquals("com.abc.my.quorum.listener", quorumConfig.getListenerConfigs().get(0).getClassName());
         assertEquals("com.abc.my.second.listener", quorumConfig.getListenerConfigs().get(1).getClassName());
+        assertEquals("com.hazelcast.SomeQuorumFunction", quorumConfig.getQuorumFunctionClassName());
+    }
+
+    @Test(expected = ConfigurationException.class)
+    public void testQuorumConfig_whenClassNameAndRecentlyActiveQuorumDefined_exceptionIsThrown() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <quorum-function-class-name>com.hazelcast.SomeQuorumFunction</quorum-function-class-name>"
+                + "        <recently-active-quorum />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+    }
+
+    @Test(expected = ConfigurationException.class)
+    public void testQuorumConfig_whenClassNameAndProbabilisticQuorumDefined_exceptionIsThrown() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <quorum-function-class-name>com.hazelcast.SomeQuorumFunction</quorum-function-class-name>"
+                + "        <probabilistic-quorum />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+    }
+
+    @Test(expected = InvalidConfigurationException.class)
+    public void testQuorumConfig_whenBothBuiltinQuorumsDefined_exceptionIsThrown() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <probabilistic-quorum />"
+                + "        <recently-active-quorum />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+    }
+
+    @Test
+    public void testQuorumConfig_whenRecentlyActiveQuorum_withDefaultValues() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <recently-active-quorum />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        assertInstanceOf(RecentlyActiveQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
+        RecentlyActiveQuorumFunction quorumFunction = (RecentlyActiveQuorumFunction) quorumConfig
+                .getQuorumFunctionImplementation();
+        assertEquals(RecentlyActiveQuorumConfigBuilder.DEFAULT_HEARTBEAT_TOLERANCE_MILLIS,
+                quorumFunction.getHeartbeatToleranceMillis());
+    }
+
+    @Test
+    public void testQuorumConfig_whenRecentlyActiveQuorum_withCustomValues() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <recently-active-quorum heartbeat-tolerance-millis=\"13000\" />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        assertEquals(3, quorumConfig.getSize());
+        assertInstanceOf(RecentlyActiveQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
+        RecentlyActiveQuorumFunction quorumFunction = (RecentlyActiveQuorumFunction) quorumConfig
+                .getQuorumFunctionImplementation();
+        assertEquals(13000, quorumFunction.getHeartbeatToleranceMillis());
+    }
+
+    @Test
+    public void testQuorumConfig_whenProbabilisticQuorum_withDefaultValues() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <probabilistic-quorum />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        assertInstanceOf(ProbabilisticQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
+        ProbabilisticQuorumFunction quorumFunction = (ProbabilisticQuorumFunction) quorumConfig.getQuorumFunctionImplementation();
+        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_HEARTBEAT_INTERVAL_MILLIS,
+                quorumFunction.getHeartbeatIntervalMillis());
+        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_HEARTBEAT_PAUSE_MILLIS,
+                quorumFunction.getAcceptableHeartbeatPauseMillis());
+        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_MIN_STD_DEVIATION,
+                quorumFunction.getMinStdDeviationMillis());
+        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_PHI_THRESHOLD, quorumFunction.getSuspicionThreshold(), 0.01);
+        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_SAMPLE_SIZE, quorumFunction.getMaxSampleSize());
+    }
+
+    @Test
+    public void testQuorumConfig_whenProbabilisticQuorum_withCustomValues() {
+        String xml = HAZELCAST_START_TAG
+                + "      <quorum enabled=\"true\" name=\"myQuorum\">\n"
+                + "        <quorum-size>3</quorum-size>\n"
+                + "        <probabilistic-quorum acceptable-heartbeat-pause-millis=\"37400\" suspicion-threshold=\"3.14592\" "
+                + "                 max-sample-size=\"42\" min-std-deviation-millis=\"1234\""
+                + "                 heartbeat-interval-millis=\"4321\" />"
+                + "    </quorum>\n"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        assertInstanceOf(ProbabilisticQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
+        ProbabilisticQuorumFunction quorumFunction = (ProbabilisticQuorumFunction) quorumConfig.getQuorumFunctionImplementation();
+        assertEquals(4321, quorumFunction.getHeartbeatIntervalMillis());
+        assertEquals(37400, quorumFunction.getAcceptableHeartbeatPauseMillis());
+        assertEquals(1234, quorumFunction.getMinStdDeviationMillis());
+        assertEquals(3.14592d, quorumFunction.getSuspicionThreshold(), 0.001d);
+        assertEquals(42, quorumFunction.getMaxSampleSize());
     }
 
     @Test
@@ -1554,6 +1669,7 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
                 + "        <pool-size>5</pool-size>\n"
                 + "        <capacity>2</capacity>\n"
                 + "        <quorum-ref>customQuorumRule</quorum-ref>"
+                + "        <merge-policy batch-size='99'>PutIfAbsent</merge-policy>"
                 + "    </scheduled-executor-service>\n"
                 + HAZELCAST_END_TAG;
 
@@ -1565,6 +1681,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
         assertEquals(5, scheduledExecutorConfig.getPoolSize());
         assertEquals(2, scheduledExecutorConfig.getCapacity());
         assertEquals("customQuorumRule", scheduledExecutorConfig.getQuorumName());
+        assertEquals(99, scheduledExecutorConfig.getMergePolicyConfig().getBatchSize());
+        assertEquals("PutIfAbsent", scheduledExecutorConfig.getMergePolicyConfig().getPolicy());
     }
 
     @Test
@@ -1605,6 +1723,25 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void testPNCounterConfig() {
+        String xml = HAZELCAST_START_TAG
+                + "    <pn-counter name=\"pn-counter-1\">\n"
+                + "        <replica-count>100</replica-count>\n"
+                + "        <quorum-ref>quorumRuleWithThreeMembers</quorum-ref>\n"
+                + "        <statistics-enabled>false</statistics-enabled>\n"
+                + "    </pn-counter>"
+                + HAZELCAST_END_TAG;
+
+        Config config = buildConfig(xml);
+        PNCounterConfig pnCounterConfig = config.getPNCounterConfig("pn-counter-1");
+
+        assertFalse(config.getPNCounterConfigs().isEmpty());
+        assertEquals(100, pnCounterConfig.getReplicaCount());
+        assertEquals("quorumRuleWithThreeMembers", pnCounterConfig.getQuorumName());
+        assertFalse(pnCounterConfig.isStatisticsEnabled());
+    }
+
+    @Test
     public void testMultiMapConfig() {
         String xml = HAZELCAST_START_TAG
                 + "  <multimap name=\"myMultiMap\">"
@@ -1633,16 +1770,26 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
     public void testReplicatedMapConfig() {
         String xml = HAZELCAST_START_TAG
                 + "    <replicatedmap name=\"foobar\">\n"
-                + "        <quorum-ref>customQuorumRule</quorum-ref>"
+                + "        <in-memory-format>BINARY</in-memory-format>\n"
+                + "        <async-fillup>false</async-fillup>\n"
+                + "        <statistics-enabled>false</statistics-enabled>\n"
+                + "        <quorum-ref>CustomQuorumRule</quorum-ref>\n"
+                + "        <merge-policy batch-size=\"2342\">CustomMergePolicy</merge-policy>\n"
                 + "    </replicatedmap>\n"
                 + HAZELCAST_END_TAG;
 
         Config config = buildConfig(xml);
         ReplicatedMapConfig replicatedMapConfig = config.getReplicatedMapConfig("foobar");
 
-        // TODO -> not full config checked
         assertFalse(config.getReplicatedMapConfigs().isEmpty());
-        assertEquals("customQuorumRule", replicatedMapConfig.getQuorumName());
+        assertEquals(InMemoryFormat.BINARY, replicatedMapConfig.getInMemoryFormat());
+        assertFalse(replicatedMapConfig.isAsyncFillup());
+        assertFalse(replicatedMapConfig.isStatisticsEnabled());
+        assertEquals("CustomQuorumRule", replicatedMapConfig.getQuorumName());
+
+        MergePolicyConfig mergePolicyConfig = replicatedMapConfig.getMergePolicyConfig();
+        assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
+        assertEquals(2342, mergePolicyConfig.getBatchSize());
     }
 
     @Test
@@ -1987,6 +2134,20 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void testCRDTReplicationConfig() {
+        final String xml = HAZELCAST_START_TAG
+                + "<crdt-replication>\n"
+                + "        <max-concurrent-replication-targets>10</max-concurrent-replication-targets>\n"
+                + "        <replication-period-millis>2000</replication-period-millis>\n"
+                + "</crdt-replication>"
+                + HAZELCAST_END_TAG;
+        final Config config = new InMemoryXmlConfig(xml);
+        final CRDTReplicationConfig replicationConfig = config.getCRDTReplicationConfig();
+        assertEquals(10, replicationConfig.getMaxConcurrentReplicationTargets());
+        assertEquals(2000, replicationConfig.getReplicationPeriodMillis());
+    }
+
+    @Test
     public void testGlobalSerializer() {
         String name = randomName();
         String val = "true";
@@ -2020,8 +2181,8 @@ public class XMLConfigBuilderTest extends HazelcastTestSupport {
                 + "    <validation-timeout-seconds>" + validationTimeout + "</validation-timeout-seconds>"
                 + "    <data-load-timeout-seconds>" + dataLoadTimeout + "</data-load-timeout-seconds>"
                 + "    <cluster-data-recovery-policy>" + policy + "</cluster-data-recovery-policy>"
-                + "</hot-restart-persistence>\n" +
-                HAZELCAST_END_TAG;
+                + "</hot-restart-persistence>\n"
+                + HAZELCAST_END_TAG;
 
         Config config = new InMemoryXmlConfig(xml);
         HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();

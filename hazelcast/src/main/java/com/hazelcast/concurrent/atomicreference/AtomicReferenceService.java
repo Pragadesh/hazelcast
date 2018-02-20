@@ -52,6 +52,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.internal.config.ConfigValidator.checkBasicConfig;
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
 import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
 import static com.hazelcast.util.ExceptionUtil.rethrow;
@@ -117,6 +118,9 @@ public class AtomicReferenceService
 
     @Override
     public AtomicReferenceProxy createDistributedObject(String name) {
+        AtomicReferenceConfig atomicReferenceConfig = nodeEngine.getConfig().findAtomicReferenceConfig(name);
+        checkBasicConfig(atomicReferenceConfig);
+
         return new AtomicReferenceProxy(name, nodeEngine, this);
     }
 
@@ -229,7 +233,22 @@ public class AtomicReferenceService
 
     private class Merger implements Runnable {
 
-        private static final int TIMEOUT_FACTOR = 500;
+        private static final long TIMEOUT_FACTOR = 500;
+
+        private final ILogger logger = nodeEngine.getLogger(AtomicReferenceService.class);
+        private final Semaphore semaphore = new Semaphore(0);
+        private final ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
+            @Override
+            public void onResponse(Object response) {
+                semaphore.release(1);
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                logger.warning("Error while running AtomicReference merge operation: " + t.getMessage());
+                semaphore.release(1);
+            }
+        };
 
         private final Map<Integer, List<AtomicReferenceContainer>> containerMap;
 
@@ -239,23 +258,8 @@ public class AtomicReferenceService
 
         @Override
         public void run() {
-            final ILogger logger = nodeEngine.getLogger(AtomicReferenceService.class);
-            final Semaphore semaphore = new Semaphore(0);
-
-            ExecutionCallback<Object> mergeCallback = new ExecutionCallback<Object>() {
-                @Override
-                public void onResponse(Object response) {
-                    semaphore.release(1);
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    logger.warning("Error while running merge operation: " + t.getMessage());
-                    semaphore.release(1);
-                }
-            };
-
             // we cannot merge into a 3.9 cluster, since not all members may understand the MergeOperation
+            // RU_COMPAT_3_9
             if (nodeEngine.getClusterService().getClusterVersion().isLessThan(Versions.V3_10)) {
                 logger.info("Cluster needs to run version " + Versions.V3_10 + " to merge AtomicReference instances");
                 return;
@@ -285,9 +289,12 @@ public class AtomicReferenceService
             containerMap.clear();
 
             try {
-                semaphore.tryAcquire(valueCount, valueCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS);
+                if (!semaphore.tryAcquire(valueCount, valueCount * TIMEOUT_FACTOR, TimeUnit.MILLISECONDS)) {
+                    logger.warning("Split-brain healing for AtomicReference instances didn't finish within the timeout...");
+                }
             } catch (InterruptedException e) {
-                logger.finest("Interrupted while waiting for merge operation...");
+                logger.finest("Interrupted while waiting for split-brain healing of AtomicReference instances...");
+                Thread.currentThread().interrupt();
             }
         }
     }
